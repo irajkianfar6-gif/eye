@@ -709,16 +709,18 @@ app.post(`${BASE}/ai/translate-batch`, async (c) => {
 // Brand profile, content templates, AI draft composer, and draft storage.
 // Data is namespaced per client/user id (sent by the frontend).
 
-const PLATFORMS = ["twitter", "instagram", "telegram", "rubika", "bale", "website"] as const;
+const PLATFORMS = ["twitter", "instagram", "linkedin", "telegram", "rubika", "bale", "eitaa", "website"] as const;
 type Platform = typeof PLATFORMS[number];
 
 const PLATFORM_RULES: Record<Platform, string> = {
   twitter: "حداکثر ۲۸۰ کاراکتر، لحن جمع‌وجور و قلاب‌دار، حداکثر ۳ هشتگ مرتبط، بدون عنوان جدا.",
   instagram: "کپشن جذاب با یک قلاب قوی در خط اول، چند خط توضیح، ۵ تا ۱۰ هشتگ در انتها، استفادهٔ ملایم از ایموجی.",
+  linkedin: "پست تحلیلی و حرفه‌ای برای لینکدین، شروع با یک بینش کلیدی، ۳ تا ۴ بولت تحلیلی از پیامدها، لحن کارشناسی و ۳ تا ۵ هشتگ تخصصی.",
   telegram: "پیام کانال با تیتر پررنگ (با *)، چند خط خلاصه، در پایان یک خط منبع/لینک. قالب مارک‌داون تلگرام.",
   rubika: "پیام کوتاه و خوانا برای کانال روبیکا، تیتر در خط اول، خلاصهٔ کوتاه، بدون مارک‌داون پیچیده.",
   bale: "پیام کانال بله، تیتر در خط اول، خلاصهٔ کوتاه و رسمی‌تر، در پایان خط منبع.",
-  website: "خبر کامل برای سایت: یک تیتر، یک لید کوتاه، و بدنهٔ چندپاراگرافی. خروجی به‌صورت متن ساده با پاراگراف‌بندی.",
+  eitaa: "پیام کانال ایتا با تیتر روشن در سطر اول، بولت‌بندی منظم، لحن خبری روان و درج منبع در پایان.",
+  website: "خبر کامل برای وبلاگ/سایت: یک تیتر، یک لید کوتاه، و بدنهٔ چندپاراگرافی. خروجی به‌صورت متن ساده با پاراگراف‌بندی.",
 };
 
 function studioUser(c: any): string {

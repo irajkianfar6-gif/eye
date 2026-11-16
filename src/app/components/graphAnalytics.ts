@@ -1234,3 +1234,174 @@ export function computeLocalNarrativeDivergence(cluster: {
   };
 }
 
+// ─────────────── 6. TIME-TRAVEL CLUSTER GROWTH & DECAY LIFECYCLE ───────────────
+export type ClusterPhase = "growing" | "peaking" | "decaying";
+
+export type TemporalHourBucket = {
+  hourIndex: number;
+  tsStart: number;
+  tsEnd: number;
+  articleCount: number;
+  growingCount: number;
+  peakingCount: number;
+  decayingCount: number;
+};
+
+export type ClusterLifecycleEntry = {
+  id: string;
+  phase: ClusterPhase;
+  phaseLabel: string;
+  /** 0.25 (faded/decayed) .. 1.35 (actively peaking) */
+  intensity: number;
+  /** Number of items published up to cursorTs */
+  visibleCount: number;
+  /** Number of items published within the active 3h momentum window before cursorTs */
+  recentCount: number;
+  ageHours: number;
+  idleHours: number;
+};
+
+export type TemporalLifecycleSummary = {
+  cursorTs: number;
+  windowHours: number;
+  buckets: TemporalHourBucket[];
+  clusters: ClusterLifecycleEntry[];
+  growingCount: number;
+  peakingCount: number;
+  decayingCount: number;
+  nodeMultipliers: Record<string, { phase: ClusterPhase; scale: number; alpha: number }>;
+};
+
+export function computeTemporalLifecycle(
+  allItems: { id?: string; source: string; ts: number }[],
+  allClusters: { id: string; items: { source: string; ts: number }[] }[],
+  nowTs: number,
+  windowHours = 24,
+  cursorHour = windowHours,
+): TemporalLifecycleSummary {
+  const safeWindow = Math.max(1, Math.min(168, Math.round(windowHours)));
+  const clampedHour = Math.max(0, Math.min(safeWindow, cursorHour));
+  const startTs = nowTs - safeWindow * 3600000;
+  const cursorTs = startTs + clampedHour * 3600000;
+  const ACTIVE_WINDOW_MS = 3 * 3600000; // 3 hours momentum window
+
+  const evaluateClusterAt = (
+    c: { id: string; items: { source: string; ts: number }[] },
+    atTs: number,
+  ): ClusterLifecycleEntry | null => {
+    const visible = c.items.filter(it => it.ts >= startTs && it.ts <= atTs);
+    if (visible.length < 2) return null;
+    const sorted = [...visible].sort((a, b) => a.ts - b.ts);
+    const firstTs = sorted[0].ts;
+    const lastTs = sorted[sorted.length - 1].ts;
+    const ageHours = Math.max(0, (atTs - firstTs) / 3600000);
+    const idleHours = Math.max(0, (atTs - lastTs) / 3600000);
+    const recentCount = visible.filter(it => atTs - it.ts <= ACTIVE_WINDOW_MS).length;
+
+    let phase: ClusterPhase = "growing";
+    let phaseLabel = "در حال شکل‌گیری";
+    let intensity = 1.0;
+
+    if (idleHours > 3 && recentCount === 0) {
+      phase = "decaying";
+      phaseLabel = "در حال فروکش";
+      // Smooth exponential-like decay from 0.85 down to 0.3
+      intensity = Math.max(0.3, Number((0.9 - Math.min(0.6, (idleHours - 3) * 0.05)).toFixed(2)));
+    } else if (recentCount >= 3 || (visible.length >= 3 && idleHours <= 1.5)) {
+      phase = "peaking";
+      phaseLabel = "در اوج انتشار";
+      intensity = Math.min(1.35, Number((1.05 + recentCount * 0.06).toFixed(2)));
+    } else {
+      phase = "growing";
+      phaseLabel = "در حال رشد";
+      intensity = Math.min(1.2, Number((0.9 + recentCount * 0.08).toFixed(2)));
+    }
+
+    return {
+      id: c.id,
+      phase,
+      phaseLabel,
+      intensity,
+      visibleCount: visible.length,
+      recentCount,
+      ageHours: Number(ageHours.toFixed(1)),
+      idleHours: Number(idleHours.toFixed(1)),
+    };
+  };
+
+  // Build hourly buckets across the window
+  const buckets: TemporalHourBucket[] = [];
+  for (let h = 0; h < safeWindow; h++) {
+    const bStart = startTs + h * 3600000;
+    const bEnd = bStart + 3600000;
+    let articleCount = 0;
+    for (const it of allItems) {
+      if (it.ts >= bStart && it.ts < bEnd) articleCount++;
+    }
+    let growingCount = 0;
+    let peakingCount = 0;
+    let decayingCount = 0;
+    for (const c of allClusters) {
+      const st = evaluateClusterAt(c, bEnd);
+      if (!st) continue;
+      if (st.phase === "growing") growingCount++;
+      else if (st.phase === "peaking") peakingCount++;
+      else decayingCount++;
+    }
+    buckets.push({
+      hourIndex: h,
+      tsStart: bStart,
+      tsEnd: bEnd,
+      articleCount,
+      growingCount,
+      peakingCount,
+      decayingCount,
+    });
+  }
+
+  // Evaluate clusters at cursorTs
+  const clusters: ClusterLifecycleEntry[] = [];
+  let growingCount = 0;
+  let peakingCount = 0;
+  let decayingCount = 0;
+
+  const nodeBestPhase = new Map<string, { phase: ClusterPhase; scale: number; alpha: number }>();
+  const phaseRank: Record<ClusterPhase, number> = { peaking: 3, growing: 2, decaying: 1 };
+
+  for (const c of allClusters) {
+    const st = evaluateClusterAt(c, cursorTs);
+    if (!st) continue;
+    clusters.push(st);
+    if (st.phase === "growing") growingCount++;
+    else if (st.phase === "peaking") peakingCount++;
+    else decayingCount++;
+
+    for (const it of c.items) {
+      if (it.ts < startTs || it.ts > cursorTs) continue;
+      const prev = nodeBestPhase.get(it.source);
+      const scale = st.phase === "peaking" ? 1.22 : st.phase === "growing" ? 1.08 : 0.78;
+      const alpha = st.phase === "decaying" ? Math.max(0.4, st.intensity) : 1;
+      if (!prev || phaseRank[st.phase] > phaseRank[prev.phase]) {
+        nodeBestPhase.set(it.source, { phase: st.phase, scale, alpha });
+      }
+    }
+  }
+
+  const nodeMultipliers: Record<string, { phase: ClusterPhase; scale: number; alpha: number }> = {};
+  for (const [src, val] of nodeBestPhase.entries()) {
+    nodeMultipliers[src] = val;
+  }
+
+  return {
+    cursorTs,
+    windowHours: safeWindow,
+    buckets,
+    clusters,
+    growingCount,
+    peakingCount,
+    decayingCount,
+    nodeMultipliers,
+  };
+}
+
+

@@ -6,6 +6,7 @@ import {
   detectCoordinatedSyndication,
   analyzeCoverageBlindspots,
   computeLocalNarrativeDivergence,
+  computeTemporalLifecycle,
 } from "./graphAnalytics";
 
 test("buildCascadeTree identifies Patient-Zero, first-5-minute wave, and headline mutations", () => {
@@ -157,3 +158,50 @@ test("analyzeCoverageBlindspots and computeLocalNarrativeDivergence separate dom
   assert.ok(div.framingDifferences.length >= 2);
   assert.ok(div.loadedVocabulary.length >= 1);
 });
+
+test("computeTemporalLifecycle models cluster growth, peaking, and decay across 24 hours", () => {
+  const nowTs = 1770000000000;
+  const h = 3600000;
+  const startTs = nowTs - 24 * h;
+
+  // Cluster 1: formed at hour 2..3 (so by hour 24 it is decaying)
+  // Cluster 2: formed at hour 22.5..23.5 with 3 sources (so by hour 24 it is peaking)
+  // Cluster 3: formed at hour 23.2..23.8 with 2 sources (so by hour 24 it is growing)
+  const c1Items = [
+    { source: "ایرنا", ts: startTs + 2 * h },
+    { source: "ایسنا", ts: startTs + 2.5 * h },
+  ];
+  const c2Items = [
+    { source: "مهر", ts: startTs + 22.5 * h },
+    { source: "تسنیم", ts: startTs + 23.0 * h },
+    { source: "فارس", ts: startTs + 23.5 * h },
+  ];
+  const c3Items = [
+    { source: "تابناک", ts: startTs + 23.2 * h },
+    { source: "انتخاب", ts: startTs + 23.8 * h },
+  ];
+
+  const allItems = [...c1Items, ...c2Items, ...c3Items];
+  const allClusters = [
+    { id: "c1", items: c1Items },
+    { id: "c2", items: c2Items },
+    { id: "c3", items: c3Items },
+  ];
+
+  // At cursorHour = 3: c1 is growing, c2 and c3 haven't formed yet
+  const atHour3 = computeTemporalLifecycle(allItems, allClusters, nowTs, 24, 3);
+  assert.equal(atHour3.buckets.length, 24);
+  assert.equal(atHour3.clusters.length, 1);
+  assert.equal(atHour3.clusters[0].id, "c1");
+  assert.equal(atHour3.clusters[0].phase, "growing");
+
+  // At cursorHour = 24 (live): c1 has decayed, c2 is peaking, c3 is growing
+  const atHour24 = computeTemporalLifecycle(allItems, allClusters, nowTs, 24, 24);
+  assert.equal(atHour24.clusters.length, 3);
+  assert.equal(atHour24.decayingCount, 1);
+  assert.equal(atHour24.peakingCount, 1);
+  assert.equal(atHour24.growingCount, 1);
+  assert.equal(atHour24.nodeMultipliers["مهر"].phase, "peaking");
+  assert.equal(atHour24.nodeMultipliers["ایرنا"].phase, "decaying");
+});
+

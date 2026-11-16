@@ -18,15 +18,18 @@ import { AnalyticsScreen } from "./AnalyticsScreen";
 import { QueueScreen } from "./QueueScreen";
 import { CronSetupScreen } from "./CronSetupScreen";
 import { RetryQueueScreen } from "./RetryQueueScreen";
+import { EditorialSplitWorkspace } from "./EditorialSplitWorkspace";
+import { Columns3 } from "lucide-react";
 import { toFa } from "../utils/fa";
 
-type View = "hub" | "brand" | "templates" | "compose" | "draft" | "connections" | "automation" | "activity" | "analytics" | "queue" | "cron" | "retries";
+type View = "workspace" | "hub" | "brand" | "templates" | "compose" | "draft" | "connections" | "automation" | "activity" | "analytics" | "queue" | "cron" | "retries";
 
 type Props = { articles: Article[]; onClose: () => void };
 
 type NavItem = { id: View; label: string; icon: React.ComponentType<{ className?: string }>; desc: string };
 
 const NAV: NavItem[] = [
+  { id: "workspace", label: "میز کار تحریریه", icon: Columns3, desc: "۳ ستون: فید، ویرایشگر و موبایل" },
   { id: "hub", label: "داشبورد", icon: LayoutGrid, desc: "نمای کلی و پیش‌نویس‌ها" },
   { id: "compose", label: "ساخت محتوا", icon: Send, desc: "تولید از خبرها با هوش مصنوعی" },
   { id: "brand", label: "پروفایل برند", icon: Palette, desc: "نام، لحن، لوگو" },
@@ -54,7 +57,7 @@ export function DesktopStudio(props: Props) {
 
 function DesktopStudioInner({ articles, onClose }: Props) {
   const uid = studioUserId();
-  const [view, setView] = useState<View>("hub");
+  const [view, setView] = useState<View>("workspace");
   const [activeDraft, setActiveDraft] = useState<Draft | null>(null);
 
   const [brand, setBrand] = useState<BrandProfile | null>(null);
@@ -92,7 +95,7 @@ function DesktopStudioInner({ articles, onClose }: Props) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      if (view === "hub") onClose();
+      if (view === "hub" || view === "workspace") onClose();
       else setView("hub");
     };
     window.addEventListener("keydown", onKey);
@@ -107,7 +110,19 @@ function DesktopStudioInner({ articles, onClose }: Props) {
   const meta = NAV.find((n) => n.id === view) ?? (view === "draft" ? { label: "ویرایش پیش‌نویس", desc: activeDraft?.title || "" } : NAV[0]);
 
   let panel: React.ReactNode = null;
-  if (view === "hub") {
+  if (view === "workspace") {
+    panel = (
+      <EditorialSplitWorkspace
+        articles={articles}
+        initialDraft={activeDraft}
+        onSavedDraft={(d) => {
+          setActiveDraft(d);
+          refresh();
+        }}
+        onOpenConnections={() => setView("connections")}
+      />
+    );
+  } else if (view === "hub") {
     panel = (
       <Dashboard
         brand={brand} tplCount={tplCount} connCount={connCount} ruleCount={ruleCount}

@@ -24,15 +24,26 @@ export function studioUserId(): string {
 }
 
 export const PLATFORM_META: Record<StudioPlatform, { label: string; emoji: string; hint: string }> = {
-  twitter:   { label: "توییتر / X", emoji: "𝕏",  hint: "حداکثر ۲۸۰ کاراکتر" },
+  telegram:  { label: "تلگرام",     emoji: "✈️", hint: "پیام کانال تلگرام (مارک‌داون)" },
+  twitter:   { label: "ایکس / توییتر", emoji: "𝕏",  hint: "حداکثر ۲۸۰ کاراکتر" },
   instagram: { label: "اینستاگرام", emoji: "📸", hint: "کپشن + هشتگ" },
-  telegram:  { label: "تلگرام",     emoji: "✈️", hint: "پیام کانال" },
-  rubika:    { label: "روبیکا",     emoji: "🟠", hint: "پیام کانال" },
-  bale:      { label: "بله",        emoji: "🟢", hint: "پیام کانال" },
-  website:   { label: "سایت خبری",  emoji: "🌐", hint: "خبر کامل" },
+  linkedin:  { label: "لینکدین",    emoji: "💼", hint: "پست تحلیلی و حرفه‌ای" },
+  bale:      { label: "بله",        emoji: "🟢", hint: "پیام کانال بله" },
+  rubika:    { label: "روبیکا",     emoji: "🟠", hint: "پیام کانال روبیکا" },
+  eitaa:     { label: "ایتا",       emoji: "🟣", hint: "پیام کانال ایتا" },
+  website:   { label: "وبلاگ / سایت", emoji: "🌐", hint: "مقاله و خبر کامل" },
 };
 
-export const ALL_PLATFORMS: StudioPlatform[] = ["telegram", "bale", "rubika", "twitter", "instagram", "website"];
+export const ALL_PLATFORMS: StudioPlatform[] = [
+  "telegram",
+  "twitter",
+  "instagram",
+  "linkedin",
+  "bale",
+  "rubika",
+  "eitaa",
+  "website",
+];
 
 /** Platforms with real one-tap publishing support. */
 export const PUBLISHABLE: PublishPlatform[] = ["telegram", "bale", "rubika", "website", "twitter", "instagram"];
@@ -118,8 +129,10 @@ export const INPUT_CLS =
 export const PLATFORM_LIMIT: Record<StudioPlatform, number> = {
   twitter: 280,
   instagram: 2200,
+  linkedin: 3000,
   telegram: 4096,
   rubika: 4096,
   bale: 4096,
+  eitaa: 4096,
   website: 0,
 };

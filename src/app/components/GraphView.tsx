@@ -21,8 +21,10 @@ import {
   detectCoordinatedSyndication,
   analyzeCoverageBlindspots,
   computeLocalNarrativeDivergence,
+  computeTemporalLifecycle,
   type NarrativeDivergenceResult,
 } from "./graphAnalytics";
+import { TimeTravelScrubber } from "./TimeTravelScrubber";
 import { toFa } from "./mobile/utils/fa";
 
 type Props = {
@@ -384,7 +386,7 @@ function VelocitySparkline({ cluster }: { cluster: Cluster }) {
 
 export function GraphView({ articles, loading, onRefresh }: Props) {
   const [threshold, setThreshold] = useState(0.28);
-  const [windowHours, setWindowHours] = useState(48);
+  const [windowHours, setWindowHours] = useState(24);
   const [selectedCluster, setSelectedCluster] = useState<Cluster | null>(null);
   const [clusterSubView, setClusterSubView] = useState<"cascade" | "divergence">("cascade");
   const [focusNode, setFocusNode] = useState<string | null>(null);
@@ -472,9 +474,36 @@ export function GraphView({ articles, loading, onRefresh }: Props) {
     return timeBounds.minTs + (timeBounds.maxTs - timeBounds.minTs) * Math.max(0.04, timeTravelRatio);
   }, [timeTravelRatio, timeBounds]);
 
+  const fullWindowGraph = useMemo(
+    () => buildGraph(articles, threshold, windowHours, undefined),
+    [articles, threshold, windowHours],
+  );
+
   const graph = useMemo(
-    () => buildGraph(articles, threshold, windowHours, activeCutoffTs),
-    [articles, threshold, windowHours, activeCutoffTs],
+    () => (activeCutoffTs === undefined ? fullWindowGraph : buildGraph(articles, threshold, windowHours, activeCutoffTs)),
+    [articles, threshold, windowHours, activeCutoffTs, fullWindowGraph],
+  );
+
+  const cursorHour = useMemo(
+    () => Number((Math.max(1 / windowHours, timeTravelRatio) * windowHours).toFixed(2)),
+    [timeTravelRatio, windowHours],
+  );
+
+  const temporalLifecycle = useMemo(
+    () =>
+      computeTemporalLifecycle(
+        fullWindowGraph.allItems,
+        fullWindowGraph.clusters,
+        timeBounds.maxTs,
+        windowHours,
+        cursorHour,
+      ),
+    [fullWindowGraph, timeBounds.maxTs, windowHours, cursorHour],
+  );
+
+  const lifecycleByClusterId = useMemo(
+    () => new Map(temporalLifecycle.clusters.map(c => [c.id, c])),
+    [temporalLifecycle.clusters],
   );
 
   // Cluster-level playback timer
@@ -1082,114 +1111,34 @@ export function GraphView({ articles, loading, onRefresh }: Props) {
             </div>
           </div>
 
-          {/* Time-Travel Playback Scrubber Bar */}
-          <div className="absolute bottom-3 left-3 right-3 md:left-6 md:right-6 z-10 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md rounded-2xl border border-slate-200/90 dark:border-slate-800 px-3.5 py-2.5 shadow-xl">
-            <div className="flex items-center gap-2.5 flex-wrap">
-              <button
-                onClick={() => {
-                  if (timeTravelRatio >= 0.999) setTimeTravelRatio(0.08);
-                  setTimeTravelPlaying(p => !p);
-                }}
-                className="w-8 h-8 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white flex items-center justify-center shadow-sm transition shrink-0"
-                title={timeTravelPlaying ? "توقف سفر در زمان" : "پخش تکامل زمانی شبکه"}
-              >
-                {timeTravelPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 fill-current" />}
-              </button>
-              <button
-                onClick={() => {
-                  setTimeTravelPlaying(false);
-                  setTimeTravelRatio(1);
-                }}
-                className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center shrink-0"
-                title="بازگشت به زمان حال"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-              </button>
-
-              {/* Speed Selector: 1x / 2x / 5x */}
-              <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5 text-[10px] font-medium shrink-0" dir="ltr">
-                {([1, 2, 5] as const).map(sp => (
-                  <button
-                    key={sp}
-                    onClick={() => setTimeTravelSpeed(sp)}
-                    className={`px-2 py-0.5 rounded-md transition ${
-                      timeTravelSpeed === sp
-                        ? "bg-emerald-600 text-white shadow-xs"
-                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-                    }`}
-                  >
-                    {sp}x
-                  </button>
-                ))}
-              </div>
-
-              {/* Window Quick Toggle (24h / 7d) */}
-              <div className="hidden sm:flex items-center bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5 text-[10px] shrink-0">
-                {[
-                  { h: 24, label: "۲۴ ساعت" },
-                  { h: 168, label: "۷ روز" },
-                ].map(w => (
-                  <button
-                    key={w.h}
-                    onClick={() => {
-                      setWindowHours(w.h);
-                      setTimeTravelRatio(1);
-                      setTimeTravelPlaying(false);
-                    }}
-                    className={`px-2 py-0.5 rounded-md transition ${
-                      windowHours === w.h
-                        ? "bg-white dark:bg-slate-950 text-emerald-600 dark:text-emerald-400 shadow-xs"
-                        : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
-                    }`}
-                  >
-                    {w.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Interactive Timeline Scrubber with Hourly Histogram */}
-              <div className="flex-1 min-w-[140px] relative flex flex-col justify-center">
-                <div className="flex items-end gap-0.5 h-4 px-1 pointer-events-none opacity-45">
-                  {timeBounds.histogram.map((cnt, idx) => {
-                    const maxH = Math.max(1, ...timeBounds.histogram);
-                    const activeBin = idx / timeBounds.histogram.length <= timeTravelRatio;
-                    return (
-                      <div
-                        key={idx}
-                        className={`flex-1 rounded-t-xs transition-colors ${
-                          activeBin ? "bg-emerald-500" : "bg-slate-300 dark:bg-slate-700"
-                        }`}
-                        style={{ height: `${Math.max(15, (cnt / maxH) * 100)}%` }}
-                      />
-                    );
-                  })}
-                </div>
-                <input
-                  type="range"
-                  min={0.05}
-                  max={1}
-                  step={0.01}
-                  value={timeTravelRatio}
-                  onChange={e => {
-                    setTimeTravelPlaying(false);
-                    setTimeTravelRatio(Number(e.target.value));
-                  }}
-                  aria-label="نوار لغزنده سفر در زمان"
-                  className="w-full h-1.5 accent-emerald-600 cursor-pointer -mt-1"
-                />
-              </div>
-
-              {/* Readout Badge */}
-              <div className="flex items-center gap-2 text-[11px] shrink-0">
-                <span className="px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-900/50 tabular-nums">
-                  {timeTravelRatio >= 0.999 ? "اکنون (زنده)" : currentPlaybackDateStr}
-                </span>
-                <span className="hidden lg:inline text-slate-500 tabular-nums">
-                  {toFa(graph.nodes.length)} منبع · {toFa(graph.stats.clusters)} خوشه
-                </span>
-              </div>
-            </div>
-          </div>
+          {/* TimeTravelScrubber Component */}
+          <TimeTravelScrubber
+            windowHours={windowHours}
+            cursorHour={cursorHour}
+            playing={timeTravelPlaying}
+            speed={timeTravelSpeed}
+            lifecycle={temporalLifecycle}
+            nodeCount={graph.nodes.length}
+            clusterCount={graph.stats.clusters}
+            onTogglePlay={() => {
+              if (timeTravelRatio >= 0.999) setTimeTravelRatio(1 / windowHours);
+              setTimeTravelPlaying(p => !p);
+            }}
+            onResetLive={() => {
+              setTimeTravelPlaying(false);
+              setTimeTravelRatio(1);
+            }}
+            onChangeSpeed={sp => setTimeTravelSpeed(sp)}
+            onChangeWindowHours={w => {
+              setWindowHours(w);
+              setTimeTravelRatio(1);
+              setTimeTravelPlaying(false);
+            }}
+            onScrubHour={h => {
+              setTimeTravelPlaying(false);
+              setTimeTravelRatio(Math.max(1 / windowHours, Math.min(1, h / windowHours)));
+            }}
+          />
 
           {graph.nodes.length === 0 ? (
             <div className="absolute inset-0 flex items-center justify-center text-slate-500">
@@ -1244,18 +1193,21 @@ export function GraphView({ articles, loading, onRefresh }: Props) {
                 if (!Number.isFinite(node.x) || !Number.isFinite(node.y)) return;
                 const isOrigin = node.firstCount > 0;
                 const isBridge = (node.betweenness || 0) >= 0.45;
-                const baseR = 5 + Math.min(14, Math.log2(1 + node.count) * 1.5);
+                const mult = temporalLifecycle.nodeMultipliers[node.id];
+                const scaleFactor = mult ? mult.scale : 1;
+                const phaseAlpha = mult ? mult.alpha : 1;
+                const baseR = (5 + Math.min(14, Math.log2(1 + node.count) * 1.5)) * scaleFactor;
                 const influR = baseR + 2 + node.pagerank * 8;
                 const [light, mid, dark] = catColor(node.category);
                 const dim = focusNode && focusNode !== node.id;
-                ctx.globalAlpha = dim ? 0.2 : 1;
+                ctx.globalAlpha = dim ? 0.2 : phaseAlpha;
 
-                if (isOrigin && !dim) {
+                if ((isOrigin || mult?.phase === "peaking") && !dim) {
                   const pulse = (Math.sin(Date.now() / 600) + 1) / 2;
                   ctx.beginPath();
                   ctx.arc(node.x, node.y, influR + 6 + pulse * 3, 0, 2 * Math.PI);
                   const halo = ctx.createRadialGradient(node.x, node.y, baseR, node.x, node.y, influR + 10);
-                  halo.addColorStop(0, "rgba(245,158,11,0.35)");
+                  halo.addColorStop(0, mult?.phase === "peaking" ? "rgba(16,185,129,0.38)" : "rgba(245,158,11,0.35)");
                   halo.addColorStop(1, "rgba(245,158,11,0)");
                   ctx.fillStyle = halo;
                   ctx.fill();
@@ -1785,6 +1737,26 @@ export function GraphView({ articles, loading, onRefresh }: Props) {
                               <span>{toFa(c.items.length)} منبع</span>
                               <span>·</span>
                               <span>{formatDelay(c.spanMin)}</span>
+                              {(() => {
+                                const lc = lifecycleByClusterId.get(c.id);
+                                if (!lc) return null;
+                                return (
+                                  <>
+                                    <span>·</span>
+                                    <span
+                                      className={
+                                        lc.phase === "peaking"
+                                          ? "text-amber-600 dark:text-amber-400 font-medium"
+                                          : lc.phase === "growing"
+                                            ? "text-emerald-600 dark:text-emerald-400 font-medium"
+                                            : "text-slate-400"
+                                      }
+                                    >
+                                      {lc.phaseLabel}
+                                    </span>
+                                  </>
+                                );
+                              })()}
                               {c.trending && <span className="text-orange-500">🔥</span>}
                               {c.convergence && <span className="text-rose-500">⚠</span>}
                             </div>

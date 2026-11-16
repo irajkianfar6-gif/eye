@@ -604,7 +604,7 @@ export type AiConfigStatus = {
 };
 
 // ── Content Studio types ──
-export type StudioPlatform = "twitter" | "instagram" | "telegram" | "rubika" | "bale" | "website";
+export type StudioPlatform = "twitter" | "instagram" | "telegram" | "rubika" | "bale" | "eitaa" | "linkedin" | "website";
 
 export type BrandProfile = {
   name: string;
