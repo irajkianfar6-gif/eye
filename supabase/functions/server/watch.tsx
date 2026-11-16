@@ -50,19 +50,30 @@ type WatchState = {
 };
 
 // ── AI config (self-contained to avoid a circular import with index.tsx) ──
-const AI_BASE = "https://api.ainative.studio/api/v1";
-const AI_MODEL = "deepseek-v4-flash";
+const AI_BASE = "https://api.bluesminds.com/v1";
+const AI_MODEL = "claude-sonnet-5";
+const DEFAULT_AI_KEY =
+  process.env.AINATIVE_API_KEY ||
+  process.env.AI_API_KEY ||
+  "sk-Bg5BjiAdshUmWRxhl1SsO4XFk0eFxwsizhDOzrCXH8uyMqxr";
+
+function normalizeAiBase(raw?: string): string {
+  const b = String(raw || AI_BASE).trim().replace(/\/+$/, "");
+  if (!b) return AI_BASE;
+  if (/\/v\d+$/i.test(b)) return b;
+  return `${b}/v1`;
+}
 
 async function getAiConfig(userId?: string): Promise<{ key: string; base: string; model: string }> {
   if (userId) {
     try {
       const cfg: any = await kv.get(`ai:config:${userId}`);
       if (cfg?.apiKey) {
-        return { key: cfg.apiKey, base: (cfg.baseUrl || AI_BASE).replace(/\/+$/, ""), model: cfg.model || AI_MODEL };
+        return { key: cfg.apiKey, base: normalizeAiBase(cfg.baseUrl), model: cfg.model || AI_MODEL };
       }
     } catch (e) { console.log("watch getAiConfig error:", String(e)); }
   }
-  return { key: process.env.AINATIVE_API_KEY || "", base: AI_BASE, model: AI_MODEL };
+  return { key: DEFAULT_AI_KEY, base: AI_BASE, model: AI_MODEL };
 }
 
 async function aiSummarizeChange(before: string, after: string, userId?: string): Promise<string | undefined> {

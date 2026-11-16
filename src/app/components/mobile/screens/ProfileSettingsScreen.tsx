@@ -290,7 +290,7 @@ function AiKeySection() {
           <div className="flex-1 min-w-0">
             <div className="text-[13.5px] leading-tight">کلید هوش مصنوعی اختصاصی</div>
             <div className="text-[11px] text-[var(--foreground-subtle)] mt-0.5 truncate">
-              {usingCustom ? `کلید شما فعال است · ${cfg?.model}` : "استفاده از کلید پیش‌فرض برنامه"}
+              {usingCustom ? `کلید شما فعال است · ${cfg?.model}` : `سرویس پیش‌فرض فعال · ${cfg?.defaultModel || "claude-sonnet-5"} (${cfg?.defaultBase || "https://api.bluesminds.com"})`}
             </div>
           </div>
           {usingCustom ? (
@@ -311,9 +311,9 @@ function AiKeySection() {
               <KeyRound className="size-4 text-[var(--foreground-subtle)] shrink-0" />
               <input value={apiKey} onChange={(e) => setApiKey(e.target.value)} type="password" placeholder={usingCustom ? "برای تغییر، کلید جدید را وارد کن" : "API Key"} dir="ltr" className="flex-1 bg-transparent outline-none text-[14px]" />
             </div>
-            <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="Base URL (https://.../v1)" dir="ltr"
+            <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="Base URL (https://api.bluesminds.com)" dir="ltr"
               className="w-full h-10 px-3 rounded-[var(--radius-md)] bg-[var(--input-background)] border border-[var(--border-subtle)] text-[14px] outline-none" />
-            <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="Model (مثلاً claude-sonnet-4-6)" dir="ltr"
+            <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="Model (مثلاً claude-sonnet-5)" dir="ltr"
               className="w-full h-10 px-3 rounded-[var(--radius-md)] bg-[var(--input-background)] border border-[var(--border-subtle)] text-[14px] outline-none" />
 
             {msg && (

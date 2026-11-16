@@ -79,12 +79,6 @@ export function setupPWA() {
     let theme = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
     if (!theme) { theme = document.createElement("meta"); theme.name = "theme-color"; document.head.appendChild(theme); }
     theme.content = "#2FB08B";
-
-    if ("serviceWorker" in navigator) {
-      const swBlob = new Blob([SW_SOURCE], { type: "text/javascript" });
-      const swUrl = URL.createObjectURL(swBlob);
-      navigator.serviceWorker.register(swUrl).catch(e => console.log("SW register failed:", e));
-    }
   } catch (e) {
     console.log("setupPWA failed:", e);
   }

@@ -6,7 +6,7 @@ import { INTL_FEEDS } from "./internationalFeeds";
 // (src/imports/media_rss_directory_iran_expanded_2026-07-17.csv).
 // Bumping this version wipes the existing feed list and re-imports everything,
 // split into domestic Iran vs. international sources.
-export const DIRECTORY_VERSION = "media-directory-2026-07-17";
+export const DIRECTORY_VERSION = "media-directory-2026-11-16-v3";
 const LS_KEY = "kian.mediaDirectory.version";
 // Legacy first-run flag used by InternationalNewsScreen — set it so the old
 // per-screen importer becomes a no-op after the global reseed.
@@ -53,12 +53,25 @@ let inFlight: Promise<number> | null = null;
 export function seedMediaDirectory(opts: { force?: boolean } = {}): Promise<number> {
   if (!opts.force && directorySeeded()) return Promise.resolve(0);
   if (inFlight) return inFlight;
-  inFlight = doSeed().finally(() => { inFlight = null; });
+  inFlight = doSeed(!!opts.force).finally(() => { inFlight = null; });
   return inFlight;
 }
 
-async function doSeed(): Promise<number> {
+async function doSeed(force = false): Promise<number> {
   const payload = buildDirectoryPayload();
+
+  if (!force) {
+    try {
+      const existing = await api.getFeeds();
+      if (Array.isArray(existing) && existing.length >= payload.length) {
+        try {
+          localStorage.setItem(LS_KEY, DIRECTORY_VERSION);
+          localStorage.setItem(LEGACY_INTL_KEY, "1");
+        } catch { /* ignore storage errors */ }
+        return 0;
+      }
+    } catch { /* proceed with seed */ }
+  }
 
   // 1) Remove every existing source/link so the directory is authoritative.
   await api.clearFeeds();

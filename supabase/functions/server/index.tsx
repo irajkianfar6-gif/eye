@@ -100,17 +100,27 @@ app.route(`${BASE}/watch`, watch);
 // ───────────────────────────── AI (LLM) ─────────────────────────────
 // Proxies AI requests to an OpenAI-compatible endpoint. Keys live only on the
 // server and never reach the frontend. Each user may supply their own key
-// (stored in KV under ai:config:{u}); otherwise the shared AINATIVE_API_KEY is used.
-// Default provider: AINative Studio (OpenAI-compatible chat completions).
-const AI_BASE = "https://api.ainative.studio/api/v1";
-const AI_MODEL = "deepseek-v4-flash";
+// (stored in KV under ai:config:{u}); otherwise the shared default key is used.
+const AI_BASE = "https://api.bluesminds.com/v1";
+const AI_BASE_DISPLAY = "https://api.bluesminds.com";
+const AI_MODEL = "claude-sonnet-5";
 
-// Default server key: AINative Studio only.
-const defaultAiKey = () => process.env.AINATIVE_API_KEY || "";
+// Default server key: BluesMinds (or env override).
+const defaultAiKey = () =>
+  process.env.AINATIVE_API_KEY ||
+  process.env.AI_API_KEY ||
+  "sk-Bg5BjiAdshUmWRxhl1SsO4XFk0eFxwsizhDOzrCXH8uyMqxr";
+
+function normalizeAiBase(raw?: string): string {
+  const b = String(raw || AI_BASE).trim().replace(/\/+$/, "");
+  if (!b) return AI_BASE;
+  if (/\/v\d+$/i.test(b)) return b;
+  return `${b}/v1`;
+}
 
 const aiConfigKey = (u: string) => `ai:config:${u}`;
 
-// Resolve the effective AI credentials for a user (custom → fallback to env).
+// Resolve the effective AI credentials for a user (custom → fallback to default).
 async function getAiConfig(userId?: string): Promise<{ key: string; base: string; model: string; source: "user" | "default" }> {
   if (userId) {
     try {
@@ -118,7 +128,7 @@ async function getAiConfig(userId?: string): Promise<{ key: string; base: string
       if (cfg?.apiKey) {
         return {
           key: cfg.apiKey,
-          base: (cfg.baseUrl || AI_BASE).replace(/\/+$/, ""),
+          base: normalizeAiBase(cfg.baseUrl),
           model: cfg.model || AI_MODEL,
           source: "user",
         };
@@ -192,11 +202,11 @@ app.get(`${BASE}/ai/config`, async (c) => {
   const cfg: any = (await kv.get(aiConfigKey(u))) || null;
   return c.json({
     config: {
-      hasKey: !!cfg?.apiKey,
-      baseUrl: cfg?.baseUrl || AI_BASE,
+      hasKey: !!(cfg?.apiKey || defaultAiKey()),
+      baseUrl: cfg?.baseUrl || AI_BASE_DISPLAY,
       model: cfg?.model || AI_MODEL,
-      updatedAt: cfg?.updatedAt || 0,
-      defaultBase: AI_BASE,
+      updatedAt: cfg?.updatedAt || Date.now(),
+      defaultBase: AI_BASE_DISPLAY,
       defaultModel: AI_MODEL,
     },
   });
@@ -207,7 +217,7 @@ app.post(`${BASE}/ai/config`, async (c) => {
     const u = studioUser(c);
     const { apiKey, baseUrl, model } = await c.req.json();
     if (!apiKey || !String(apiKey).trim()) return c.json({ error: "کلید API لازم است" }, 400);
-    const base = String(baseUrl || AI_BASE).trim().replace(/\/+$/, "");
+    const base = normalizeAiBase(baseUrl);
     const mdl = String(model || AI_MODEL).trim();
 
     // Verify the key with a minimal request (try /models, then a 1-token chat).
@@ -231,8 +241,8 @@ app.post(`${BASE}/ai/config`, async (c) => {
     }
     if (!ok) return c.json({ error: `بررسی کلید ناموفق بود: ${detail}` }, 400);
 
-    await kv.set(aiConfigKey(u), { apiKey: String(apiKey), baseUrl: base, model: mdl, updatedAt: Date.now() });
-    return c.json({ ok: true, config: { hasKey: true, baseUrl: base, model: mdl } });
+    await kv.set(aiConfigKey(u), { apiKey: String(apiKey), baseUrl: String(baseUrl || AI_BASE_DISPLAY).trim().replace(/\/+$/, ""), model: mdl, updatedAt: Date.now() });
+    return c.json({ ok: true, config: { hasKey: true, baseUrl: String(baseUrl || AI_BASE_DISPLAY).trim().replace(/\/+$/, ""), model: mdl } });
   } catch (e) {
     console.log("ai/config save error:", String(e));
     return c.json({ error: String(e) }, 500);
@@ -2142,62 +2152,146 @@ function feedIdForUrl(url: string): string {
 // Fast, verified RSS/Atom/RDF feeds prioritized when warming a cold cache so
 // the very first /articles call returns rich domestic & international news.
 const PRIORITY_URLS = new Set<string>([
+  // Iranian domestic feeds from Iranian_News_RSS_Feed_Directory_deac7516.md
+  "https://www.irna.ir/rss",
+  "https://www.isna.ir/rss",
+  "https://www.mehrnews.com/rss",
+  "https://en.mehrnews.com/rss",
+  "https://www.yjc.ir/fa/rss/allnews",
+  "https://www.ilna.ir/rss",
+  "https://www.ilna.ir/feeds/",
+  "https://www.pana.ir/rss",
+  "https://www.icana.ir/rss",
+  "https://www.hawzahnews.com/rss",
+  "https://www.salamatnews.com/rss",
+  "https://www.imna.ir/rss",
+  "https://www.ibna.ir/rss",
+  "https://www.khabaronline.ir/rss",
+  "https://www.tabnak.ir/fa/rss/allnews",
+  "https://www.asriran.com/fa/rss/allnews",
+  "https://www.entekhab.ir/fa/rss/allnews",
   "https://www.hamshahrionline.ir/rss",
+  "https://www.mashreghnews.ir/rss",
+  "https://www.eghtesadonline.com/rss",
+  "https://www.tehrantimes.com/rss",
+  "https://www.radiofarda.com/api/",
+  "https://www.isna.ir/rss/tp/512",
   "https://www.qudsonline.ir/rss",
   "https://www.zoomit.ir/feed/",
+  "https://digiato.com/feed",
+  "https://itiran.com/feed/",
   "https://www.khabarvarzeshi.com/rss",
   "https://www.tarafdari.com/rss.xml",
-  "https://itiran.com/feed/",
   "https://www.ensafnews.com/feed/",
   "https://www.rouydad24.ir/fa/rss/allnews",
-  "https://www.yjc.ir/fa/rss/allnews",
   "https://arzdigital.com/feed/",
   "https://energypress.ir/feed/",
   "https://www.jamaran.news/feeds/",
   "https://www.poollnews.ir/fa/rss/allnews",
   "https://noandish.com/fa/rss/allnews",
-  "https://www.ilna.ir/feeds/",
   "https://fa.shafaqna.com/feed/",
-  "https://digiato.com/feed",
   "https://www.mizanonline.ir/fa/rss/allnews",
-  // International feeds
-  "https://feeds.bbci.co.uk/news/rss.xml",
-  "https://www.aljazeera.com/xml/rss/all.xml",
-  "https://www.france24.com/en/rss",
-  "https://rss.dw.com/rdf/rss-en-all",
+  // International feeds from international_news_rss_feeds_bc41ee08.json
+  "https://www.cbc.ca/webfeed/rss/rss-topstories",
+  "https://www.theglobeandmail.com/arc/outboundfeeds/rss/category/world/",
+  "https://www.reforma.com/rss/portada.xml",
+  "https://feeds.abcnews.com/abcnews/topstories",
+  "https://www.cbsnews.com/latest/rss/main",
+  "http://rss.cnn.com/rss/cnn_topstories.rss",
+  "https://moxie.foxnews.com/google-publisher/latest.xml",
+  "https://www.latimes.com/world-nation/rss2.0.xml",
+  "https://feeds.nbcnews.com/feeds/topstories",
+  "https://feeds.npr.org/1001/rss.xml",
+  "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
+  "https://www.pbs.org/newshour/feeds/rss/headlines",
+  "https://rss.politico.com/politics-news.xml",
+  "https://thehill.com/feed/",
+  "https://rss.upi.com/news/news.rss",
+  "https://feeds.content.dowjones.io/public/rss/RSSWorldNews",
+  "https://feeds.washingtonpost.com/rss/world",
   "https://www.euronews.com/rss",
+  "https://www.france24.com/en/rss",
+  "https://www.lemonde.fr/en/rss/une.xml",
+  "https://www.spiegel.de/international/index.rss",
+  "https://rss.dw.com/xml/rss-en-all",
+  "https://rss.dw.com/rdf/rss-en-all",
+  "https://www.irishtimes.com/cmlink/news-1.1319192",
+  "https://www.rte.ie/news/rss/news-headlines.xml",
+  "https://www.ansa.it/sito/ansait_rss.xml",
+  "https://feeds.nos.nl/nosnieuwsalgemeen",
+  "https://www.nrk.no/toppsaker.rss",
+  "https://tass.com/rss/v2.xml",
+  "https://www.svt.se/nyheter/rss.xml",
+  "https://feeds.bbci.co.uk/news/rss.xml",
   "https://feeds.skynews.com/feeds/rss/home.xml",
-  "https://www3.nhk.or.jp/rss/news/cat0.xml",
+  "https://www.theguardian.com/world/rss",
+  "https://www.telegraph.co.uk/rss.xml",
+  "https://www.abc.net.au/news/feed/2942460/rss.xml",
   "https://www.abc.net.au/news/feed/51120/rss.xml",
+  "https://www.smh.com.au/rss/feed.xml",
+  "https://www.scmp.com/rss/91/feed",
+  "https://www.hindustantimes.com/feeds/rss/india-news/rssfeed.xml",
+  "https://www.thehindu.com/feeder/default.rss",
+  "https://timesofindia.indiatimes.com/rssfeedstopstories.cms",
+  "https://www.japantimes.co.jp/feed/",
+  "https://www3.nhk.or.jp/rss/news/cat0.xml",
+  "https://www.nzherald.co.nz/arc/outboundfeeds/rss/curated/78/?outputType=xml",
+  "https://www.dawn.com/feeds/home",
+  "https://www.channelnewsasia.com/api/v1/rss-outbound-feed?_format=xml",
+  "https://www.straitstimes.com/news/world/rss.xml",
+  "https://www.timesofisrael.com/feed/",
+  "https://www.aljazeera.com/xml/rss/all.xml",
+  "https://www.africanews.com/feed/",
+  "https://www.dailymaverick.co.za/article/feed/",
+  "https://mg.co.za/feed/",
+  "https://www.middleeasteye.net/rss",
+  "https://www.al-monitor.com/rss",
+  "https://www.batimes.com.ar/feed",
+  "https://en.mercopress.com/rss",
+  "https://www.sbs.com.au/news/feed",
+  "https://www.theguardian.com/au/rss",
+  "https://www.rnz.co.nz/rss/international.xml",
+  "https://www.rnz.co.nz/rss/national.xml",
+  "https://www.stuff.co.nz/rss",
 ]);
 
 const DEFAULT_BOOTSTRAP_FEEDS = [
-  { name: "همشهری آنلاین", url: "https://www.hamshahrionline.ir/rss", category: "روزنامه‌ها", icon: "📰" },
-  { name: "قدس آنلاین", url: "https://www.qudsonline.ir/rss", category: "روزنامه‌ها", icon: "📰" },
-  { name: "زومیت", url: "https://www.zoomit.ir/feed/", category: "فناوری و دیجیتال", icon: "💻" },
-  { name: "دیجیاتو", url: "https://digiato.com/feed", category: "فناوری و دیجیتال", icon: "📱" },
-  { name: "آی‌تی‌ایران", url: "https://itiran.com/feed/", category: "فناوری و دیجیتال", icon: "🖥️" },
-  { name: "خبر ورزشی", url: "https://www.khabarvarzeshi.com/rss", category: "ورزشی", icon: "⚽" },
-  { name: "طرفداری", url: "https://www.tarafdari.com/rss.xml", category: "ورزشی", icon: "🏟️" },
-  { name: "انصاف‌نیوز", url: "https://www.ensafnews.com/feed/", category: "پایگاه‌های خبری و تحلیلی", icon: "⚖️" },
-  { name: "رویداد۲۴", url: "https://www.rouydad24.ir/fa/rss/allnews", category: "پایگاه‌های خبری و تحلیلی", icon: "📅" },
-  { name: "باشگاه خبرنگاران جوان (YJC)", url: "https://www.yjc.ir/fa/rss/allnews", category: "خبرگزاری‌های رسمی و عمومی", icon: "🎙️" },
-  { name: "ایلنا (ILNA)", url: "https://www.ilna.ir/feeds/", category: "خبرگزاری‌های رسمی و عمومی", icon: "🛠️" },
-  { name: "خبرگزاری میزان", url: "https://www.mizanonline.ir/fa/rss/allnews", category: "خبرگزاری‌های رسمی و عمومی", icon: "⚖️" },
-  { name: "شفقنا فارسی", url: "https://fa.shafaqna.com/feed/", category: "خبرگزاری‌های رسمی و عمومی", icon: "🌙" },
-  { name: "جماران", url: "https://www.jamaran.news/feeds/", category: "پایگاه‌های خبری و تحلیلی", icon: "🏛️" },
-  { name: "نواندیش", url: "https://noandish.com/fa/rss/allnews", category: "پایگاه‌های خبری و تحلیلی", icon: "💡" },
-  { name: "ارز دیجیتال", url: "https://arzdigital.com/feed/", category: "اقتصادی و مالی", icon: "₿" },
-  { name: "انرژی پرس", url: "https://energypress.ir/feed/", category: "اقتصادی و مالی", icon: "⚡" },
-  { name: "پول‌نیوز", url: "https://www.poollnews.ir/fa/rss/allnews", category: "اقتصادی و مالی", icon: "💵" },
-  { name: "بی‌بی‌سی جهانی", url: "https://feeds.bbci.co.uk/news/rss.xml", category: "بین‌الملل · تلویزیون جهانی", icon: "🇬🇧" },
-  { name: "الجزیره انگلیسی", url: "https://www.aljazeera.com/xml/rss/all.xml", category: "بین‌الملل · تلویزیون جهانی", icon: "🇶🇦" },
-  { name: "فرانس ۲۴", url: "https://www.france24.com/en/rss", category: "بین‌الملل · تلویزیون جهانی", icon: "🇫🇷" },
-  { name: "دویچه وله", url: "https://rss.dw.com/rdf/rss-en-all", category: "بین‌الملل · تلویزیون جهانی", icon: "🇩🇪" },
-  { name: "یورونیوز", url: "https://www.euronews.com/rss", category: "بین‌الملل · تلویزیون جهانی", icon: "🇪🇺" },
-  { name: "اسکای نیوز", url: "https://feeds.skynews.com/feeds/rss/home.xml", category: "بین‌الملل · تلویزیون جهانی", icon: "🇬🇧" },
-  { name: "ان‌اچ‌کی ژاپن", url: "https://www3.nhk.or.jp/rss/news/cat0.xml", category: "بین‌الملل · تلویزیون جهانی", icon: "🇯🇵" },
-  { name: "ای‌بی‌سی استرالیا", url: "https://www.abc.net.au/news/feed/51120/rss.xml", category: "بین‌الملل · تلویزیون جهانی", icon: "🇦🇺" },
+  { name: "خبرگزاری جمهوری اسلامی ایران (ایرنا)", url: "https://www.irna.ir/rss", category: "داخلی · خبرگزاری‌های رسمی و سراسری", icon: "📰" },
+  { name: "خبرگزاری ایسنا", url: "https://www.isna.ir/rss", category: "داخلی · خبرگزاری‌های رسمی و سراسری", icon: "📰" },
+  { name: "خبرگزاری مهر", url: "https://www.mehrnews.com/rss", category: "داخلی · خبرگزاری‌های رسمی و سراسری", icon: "📰" },
+  { name: "خبرگزاری مهر (انگلیسی)", url: "https://en.mehrnews.com/rss", category: "داخلی · خبرگزاری‌های رسمی و سراسری", icon: "📰" },
+  { name: "خبرگزاری باشگاه خبرنگاران جوان", url: "https://www.yjc.ir/fa/rss/allnews", category: "داخلی · خبرگزاری‌های رسمی و سراسری", icon: "📰" },
+  { name: "خبرگزاری ایلنا", url: "https://www.ilna.ir/rss", category: "داخلی · خبرگزاری‌های رسمی و سراسری", icon: "📰" },
+  { name: "خبرگزاری پانا", url: "https://www.pana.ir/rss", category: "داخلی · خبرگزاری‌های رسمی و سراسری", icon: "📰" },
+  { name: "خبرگزاری خانه ملت", url: "https://www.icana.ir/rss", category: "داخلی · خبرگزاری‌های رسمی و سراسری", icon: "📰" },
+  { name: "خبرگزاری حوزه", url: "https://www.hawzahnews.com/rss", category: "داخلی · خبرگزاری‌های رسمی و سراسری", icon: "📰" },
+  { name: "خبرگزاری سلامت", url: "https://www.salamatnews.com/rss", category: "داخلی · خبرگزاری‌های رسمی و سراسری", icon: "📰" },
+  { name: "خبرگزاری ایمنا", url: "https://www.imna.ir/rss", category: "داخلی · خبرگزاری‌های رسمی و سراسری", icon: "📰" },
+  { name: "خبرگزاری کتاب ایران (ایبنا)", url: "https://www.ibna.ir/rss", category: "داخلی · خبرگزاری‌های رسمی و سراسری", icon: "📰" },
+  { name: "خبرآنلاین", url: "https://www.khabaronline.ir/rss", category: "داخلی · پایگاه‌های خبری و تحلیلی", icon: "📰" },
+  { name: "تابناک", url: "https://www.tabnak.ir/fa/rss/allnews", category: "داخلی · پایگاه‌های خبری و تحلیلی", icon: "📰" },
+  { name: "عصر ایران", url: "https://www.asriran.com/fa/rss/allnews", category: "داخلی · پایگاه‌های خبری و تحلیلی", icon: "📰" },
+  { name: "انتخاب", url: "https://www.entekhab.ir/fa/rss/allnews", category: "داخلی · پایگاه‌های خبری و تحلیلی", icon: "📰" },
+  { name: "همشهری آنلاین", url: "https://www.hamshahrionline.ir/rss", category: "داخلی · پایگاه‌های خبری و تحلیلی", icon: "📰" },
+  { name: "مشرق‌نیوز", url: "https://www.mashreghnews.ir/rss", category: "داخلی · پایگاه‌های خبری و تحلیلی", icon: "📰" },
+  { name: "اقتصاد آنلاین", url: "https://www.eghtesadonline.com/rss", category: "داخلی · پایگاه‌های خبری و تحلیلی", icon: "📰" },
+  { name: "تهران‌تایمز", url: "https://www.tehrantimes.com/rss", category: "داخلی · پایگاه‌های خبری و تحلیلی", icon: "📰" },
+  { name: "رادیو فردا", url: "https://www.radiofarda.com/api/", category: "داخلی · پایگاه‌های خبری و تحلیلی", icon: "📰" },
+  { name: "زومیت", url: "https://www.zoomit.ir/feed/", category: "داخلی · فناوری و دیجیتال", icon: "💻" },
+  { name: "دیجیاتو", url: "https://digiato.com/feed", category: "داخلی · فناوری و دیجیتال", icon: "📱" },
+  { name: "BBC News", url: "https://feeds.bbci.co.uk/news/rss.xml", category: "بین‌الملل · بریتانیا · شبکه خبری و تلویزیونی", icon: "🇬🇧" },
+  { name: "Al Jazeera", url: "https://www.aljazeera.com/xml/rss/all.xml", category: "بین‌الملل · قطر · شبکه خبری و تلویزیونی", icon: "🇶🇦" },
+  { name: "France 24", url: "https://www.france24.com/en/rss", category: "بین‌الملل · فرانسه · شبکه خبری و تلویزیونی", icon: "🇫🇷" },
+  { name: "Deutsche Welle (DW)", url: "https://rss.dw.com/xml/rss-en-all", category: "بین‌الملل · آلمان · شبکه خبری و تلویزیونی", icon: "🇩🇪" },
+  { name: "Euronews", url: "https://www.euronews.com/rss", category: "بین‌الملل · فرانسه · شبکه خبری و تلویزیونی", icon: "🇫🇷" },
+  { name: "Sky News", url: "https://feeds.skynews.com/feeds/rss/home.xml", category: "بین‌الملل · بریتانیا · شبکه خبری و تلویزیونی", icon: "🇬🇧" },
+  { name: "The Guardian", url: "https://www.theguardian.com/world/rss", category: "بین‌الملل · بریتانیا · روزنامه", icon: "🇬🇧" },
+  { name: "New York Times", url: "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml", category: "بین‌الملل · آمریکا · روزنامه", icon: "🇺🇸" },
+  { name: "Wall Street Journal", url: "https://feeds.content.dowjones.io/public/rss/RSSWorldNews", category: "بین‌الملل · آمریکا · روزنامه", icon: "🇺🇸" },
+  { name: "CBC News", url: "https://www.cbc.ca/webfeed/rss/rss-topstories", category: "بین‌الملل · کانادا · شبکه خبری و تلویزیونی", icon: "🇨🇦" },
+  { name: "NHK World", url: "https://www3.nhk.or.jp/rss/news/cat0.xml", category: "بین‌الملل · ژاپن · شبکه خبری و تلویزیونی", icon: "🇯🇵" },
+  { name: "Al Monitor", url: "https://www.al-monitor.com/rss", category: "بین‌الملل · خاورمیانه · رسانه دیجیتال", icon: "🌍" },
+  { name: "Middle East Eye", url: "https://www.middleeasteye.net/rss", category: "بین‌الملل · خاورمیانه · رسانه دیجیتال", icon: "🌍" },
 ];
 
 async function fetchAndParseFeed(url: string, feedId: string, timeoutMs = 6000) {
@@ -2449,6 +2543,15 @@ app.get(`${BASE}/articles`, async (c) => {
   };
   // Refresh the stalest, non-tripped feeds first; among untested feeds (lastOk === 0),
   // prioritize verified fast feeds so cold starts return rich articles immediately.
+  const cacheAgeMs = now - Number(cacheObj.ts || 0);
+  const isWarmGeneral = !feedIdParam && !categoryParam && cached.length >= 60;
+  const liveQuota = feedIdParam
+    ? pool.length
+    : isWarmGeneral && cacheAgeMs < 30_000
+      ? 0
+      : isWarmGeneral
+        ? 6
+        : MAX_LIVE_PER_REQUEST;
   const refreshTargets = [...pool]
     .filter((f: any) => !isTripped(f.id))
     .sort((a: any, b: any) => {
@@ -2461,9 +2564,9 @@ app.get(`${BASE}/articles`, async (c) => {
       }
       return aOk - bOk;
     })
-    .slice(0, feedIdParam ? pool.length : MAX_LIVE_PER_REQUEST);
+    .slice(0, liveQuota);
 
-  const deadline = now + LIVE_DEADLINE_MS;
+  const deadline = now + (isWarmGeneral ? 3000 : LIVE_DEADLINE_MS);
   const CONCURRENCY = 12;
   let idx = 0;
   let refreshed = 0;

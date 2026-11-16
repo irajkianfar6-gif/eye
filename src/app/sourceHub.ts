@@ -190,12 +190,34 @@ export function probeUrls(siteUrl: string): string[] {
 export type CatalogEntry = DetectedSource & { description: string; tags?: string[] };
 
 export const CATALOG: CatalogEntry[] = [
+  // RSS — Iranian News Agencies & Sites (from Iranian_News_RSS_Feed_Directory)
+  { kind: "rss", category: "خبرگزاری‌های ایران", url: "https://www.irna.ir/rss", name: "ایرنا (IRNA)", icon: "🇮🇷", description: "خبرگزاری جمهوری اسلامی", tags: ["ایران", "خبرگزاری"] },
+  { kind: "rss", category: "خبرگزاری‌های ایران", url: "https://www.isna.ir/rss", name: "ایسنا (ISNA)", icon: "🇮🇷", description: "خبرگزاری دانشجویان ایران", tags: ["ایران", "خبرگزاری"] },
+  { kind: "rss", category: "خبرگزاری‌های ایران", url: "https://www.mehrnews.com/rss", name: "خبرگزاری مهر", icon: "🇮🇷", description: "اخبار ایران و جهان", tags: ["ایران", "خبرگزاری"] },
+  { kind: "rss", category: "خبرگزاری‌های ایران", url: "https://www.tasnimnews.com/fa/rss/feed/0/8/0/%D9%85%D9%87%D9%85%D8%AA%D8%B1%DB%8C%D9%86-%D8%A7%D8%AE%D8%A8%D8%A7%D8%B1", name: "تسنیم — مهم‌ترین اخبار", icon: "🇮🇷", description: "خبرگزاری بین‌المللی تسنیم", tags: ["ایران", "خبرگزاری"] },
+  { kind: "rss", category: "خبرگزاری‌های ایران", url: "https://www.farsnews.ir/rss", name: "خبرگزاری فارس", icon: "🇮🇷", description: "آخرین اخبار ایران و جهان", tags: ["ایران", "خبرگزاری"] },
+  { kind: "rss", category: "خبرگزاری‌های ایران", url: "https://www.yjc.ir/fa/rss/allnews", name: "باشگاه خبرنگاران جوان", icon: "🇮🇷", description: "کل اخبار باشگاه خبرنگاران جوان", tags: ["ایران", "خبرگزاری"] },
+  { kind: "rss", category: "خبرگزاری‌های ایران", url: "https://www.ilna.ir/fa/feeds/", name: "ایلنا (ILNA)", icon: "🇮🇷", description: "خبرگزاری کار ایران", tags: ["ایران", "اقتصاد"] },
+  { kind: "rss", category: "سایت‌های خبری ایران", url: "https://www.khabaronline.ir/rss", name: "خبرآنلاین", icon: "📰", description: "پایگاه خبری تحلیلی خبرآنلاین", tags: ["ایران", "تحلیل"] },
+  { kind: "rss", category: "سایت‌های خبری ایران", url: "https://www.tabnak.ir/fa/rss/allnews", name: "تابناک", icon: "📰", description: "سایت خبری تحلیلی تابناک", tags: ["ایران", "خبر"] },
+  { kind: "rss", category: "سایت‌های خبری ایران", url: "https://www.asriran.com/fa/rss/allnews", name: "عصر ایران", icon: "📰", description: "پایگاه خبری تحلیلی عصر ایران", tags: ["ایران", "خبر"] },
+  { kind: "rss", category: "سایت‌های خبری ایران", url: "https://www.entekhab.ir/fa/rss/allnews", name: "انتخاب", icon: "📰", description: "پایگاه خبری تحلیلی انتخاب", tags: ["ایران", "سیاست"] },
+  { kind: "rss", category: "سایت‌های خبری ایران", url: "https://www.eghtesadonline.com/fa/rss/allnews", name: "اقتصاد آنلاین", icon: "💹", description: "اخبار اقتصادی و بازار ایران", tags: ["اقتصاد", "بازار"] },
+  { kind: "rss", category: "سایت‌های خبری ایران", url: "https://www.varzesh3.com/rss/all", name: "ورزش سه", icon: "⚽", description: "اخبار لحظه‌ای فوتبال و ورزش ایران و جهان", tags: ["ورزش"] },
+  // RSS — International News (from international_news_rss_feeds.json)
+  { kind: "rss", category: "رسانه‌های بین‌المللی", url: "https://feeds.bbci.co.uk/news/world/rss.xml", name: "BBC News (World)", icon: "🇬🇧", description: "پوشش جهانی اخبار از بی‌بی‌سی", tags: ["بین‌الملل", "جهان"] },
+  { kind: "rss", category: "رسانه‌های بین‌المللی", url: "https://www.aljazeera.com/xml/rss/all.xml", name: "Al Jazeera English", icon: "🇶🇦", description: "اخبار خاورمیانه و جهان از الجزیره", tags: ["بین‌الملل", "خاورمیانه"] },
+  { kind: "rss", category: "رسانه‌های بین‌المللی", url: "https://www.france24.com/en/rss", name: "France 24", icon: "🇫🇷", description: "اخبار بین‌المللی از فرانس ۲۴", tags: ["بین‌الملل", "اروپا"] },
+  { kind: "rss", category: "رسانه‌های بین‌المللی", url: "https://rss.dw.com/rdf/rss-en-all", name: "Deutsche Welle (DW)", icon: "🇩🇪", description: "پوشش خبری دویچه‌وله آلمان", tags: ["بین‌الملل", "اروپا"] },
+  { kind: "rss", category: "رسانه‌های بین‌المللی", url: "https://www.euronews.com/rss", name: "Euronews", icon: "🇪🇺", description: "اخبار اروپا و بین‌الملل", tags: ["بین‌الملل", "اروپا"] },
+  { kind: "rss", category: "رسانه‌های بین‌المللی", url: "https://www.theguardian.com/world/rss", name: "The Guardian (World)", icon: "🇬🇧", description: "گزارش‌ها و تحلیل‌های جهانی گاردین", tags: ["بین‌الملل", "تحلیل"] },
+  { kind: "rss", category: "رسانه‌های بین‌المللی", url: "https://rss.nytimes.com/services/xml/rss/nyt/World.xml", name: "The New York Times (World)", icon: "🇺🇸", description: "اخبار جهان از نیویورک تایمز", tags: ["بین‌الملل", "آمریکا"] },
   // RSS — Persian general
-  { kind: "rss", category: "عمومی فارسی", url: "https://www.bbc.co.uk/persian/index.xml", name: "BBC فارسی", icon: "🌐", description: "اخبار جامع از BBC فارسی", tags: ["خبر", "بین‌الملل"] },
+  { kind: "rss", category: "عمومی فارسی", url: "https://feeds.bbci.co.uk/persian/rss.xml", name: "BBC فارسی", icon: "🌐", description: "اخبار جامع از BBC فارسی", tags: ["خبر", "بین‌الملل"] },
   { kind: "rss", category: "عمومی فارسی", url: "https://parsi.euronews.com/rss", name: "یورونیوز فارسی", icon: "🇪🇺", description: "اخبار اروپا و جهان", tags: ["خبر"] },
-  { kind: "rss", category: "عمومی فارسی", url: "https://www.dw.com/fa-ir/rss/4524", name: "دویچه‌وله فارسی", icon: "🇩🇪", description: "خبرگزاری آلمانی", tags: ["خبر"] },
+  { kind: "rss", category: "عمومی فارسی", url: "https://rss.dw.com/xml/rss-per-all", name: "دویچه‌وله فارسی", icon: "🇩🇪", description: "خبرگزاری آلمانی", tags: ["خبر"] },
   // RSS — Persian tech
-  { kind: "rss", category: "فناوری", url: "https://www.zoomit.ir/feed", name: "زومیت", icon: "💻", description: "بزرگ‌ترین مرجع فناوری فارسی", tags: ["تکنولوژی"] },
+  { kind: "rss", category: "فناوری", url: "https://www.zoomit.ir/feed/", name: "زومیت", icon: "💻", description: "بزرگ‌ترین مرجع فناوری فارسی", tags: ["تکنولوژی"] },
   { kind: "rss", category: "فناوری", url: "https://digiato.com/feed", name: "دیجیاتو", icon: "🤖", description: "تحلیل و اخبار فناوری", tags: ["تکنولوژی"] },
   // YouTube
   { kind: "youtube", category: "ویدیو", url: "https://www.youtube.com/feeds/videos.xml?channel_id=UCXuqSBlHAE6Xw-yeJA0Tunw", name: "Linus Tech Tips", icon: "📺", description: "ویدیوهای تکنولوژی LTT" },

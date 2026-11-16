@@ -1,10 +1,274 @@
-// Auto-generated from src/imports/media_rss_directory_iran_expanded_2026-07-17.csv. Do not edit by hand.
+// Integrated from Iranian_News_RSS_Feed_Directory_deac7516.md and media directory.
 export type SeedFeed = { name: string; url: string; category: string; type: string };
 export const SEED_FEEDS: SeedFeed[] = [
   {
-    "name": "باشگاه خبرنگاران جوان (YJC)",
+    "name": "خبرگزاری جمهوری اسلامی ایران (ایرنا)",
+    "url": "https://www.irna.ir/rss",
+    "category": "خبرگزاری‌های رسمی و سراسری",
+    "type": "خبرگزاری"
+  },
+  {
+    "name": "خبرگزاری ایسنا",
+    "url": "https://www.isna.ir/rss",
+    "category": "خبرگزاری‌های رسمی و سراسری",
+    "type": "خبرگزاری"
+  },
+  {
+    "name": "خبرگزاری مهر",
+    "url": "https://www.mehrnews.com/rss",
+    "category": "خبرگزاری‌های رسمی و سراسری",
+    "type": "خبرگزاری"
+  },
+  {
+    "name": "خبرگزاری مهر (انگلیسی)",
+    "url": "https://en.mehrnews.com/rss",
+    "category": "خبرگزاری‌های رسمی و سراسری",
+    "type": "خبرگزاری"
+  },
+  {
+    "name": "خبرگزاری تسنیم",
+    "url": "https://www.tasnimnews.com/fa/rss/feed/0/8/0/مهمترین-اخبار-تسنیم",
+    "category": "خبرگزاری‌های رسمی و سراسری",
+    "type": "خبرگزاری"
+  },
+  {
+    "name": "خبرگزاری تسنیم (انگلیسی)",
+    "url": "https://www.tasnimnews.com/en/rss/feed/0/7/0/all-stories",
+    "category": "خبرگزاری‌های رسمی و سراسری",
+    "type": "خبرگزاری"
+  },
+  {
+    "name": "خبرگزاری فارس",
+    "url": "https://www.farsnews.ir/rss",
+    "category": "خبرگزاری‌های رسمی و سراسری",
+    "type": "خبرگزاری"
+  },
+  {
+    "name": "خبرگزاری ایلنا",
+    "url": "https://www.ilna.ir/rss",
+    "category": "خبرگزاری‌های رسمی و سراسری",
+    "type": "خبرگزاری"
+  },
+  {
+    "name": "خبرگزاری صدا و سیما",
+    "url": "https://www.iribnews.ir/fa/rss",
+    "category": "خبرگزاری‌های رسمی و سراسری",
+    "type": "خبرگزاری"
+  },
+  {
+    "name": "خبرگزاری باشگاه خبرنگاران جوان",
     "url": "https://www.yjc.ir/fa/rss/allnews",
     "category": "خبرگزاری‌های رسمی و سراسری",
+    "type": "خبرگزاری"
+  },
+  {
+    "name": "خبرگزاری پانا",
+    "url": "https://www.pana.ir/rss",
+    "category": "خبرگزاری‌های رسمی و سراسری",
+    "type": "خبرگزاری"
+  },
+  {
+    "name": "خبرگزاری دانشجویان ایران (برنا)",
+    "url": "https://www.borna.news/rss",
+    "category": "خبرگزاری‌های رسمی و سراسری",
+    "type": "خبرگزاری"
+  },
+  {
+    "name": "خبرگزاری اهل بیت",
+    "url": "https://www.abna.ir/rss",
+    "category": "خبرگزاری‌های رسمی و سراسری",
+    "type": "خبرگزاری"
+  },
+  {
+    "name": "خبرگزاری خانه ملت",
+    "url": "https://www.icana.ir/rss",
+    "category": "خبرگزاری‌های رسمی و سراسری",
+    "type": "خبرگزاری"
+  },
+  {
+    "name": "خبرگزاری حوزه",
+    "url": "https://www.hawzahnews.com/rss",
+    "category": "خبرگزاری‌های رسمی و سراسری",
+    "type": "خبرگزاری"
+  },
+  {
+    "name": "خبرگزاری ایکنا",
+    "url": "https://www.iqna.ir/rss",
+    "category": "خبرگزاری‌های رسمی و سراسری",
+    "type": "خبرگزاری"
+  },
+  {
+    "name": "خبرگزاری رسا",
+    "url": "https://www.rasanews.ir/rss",
+    "category": "خبرگزاری‌های رسمی و سراسری",
+    "type": "خبرگزاری"
+  },
+  {
+    "name": "خبرگزاری سلامت",
+    "url": "https://www.salamatnews.com/rss",
+    "category": "خبرگزاری‌های رسمی و سراسری",
+    "type": "خبرگزاری"
+  },
+  {
+    "name": "خبرگزاری ایمنا",
+    "url": "https://www.imna.ir/rss",
+    "category": "خبرگزاری‌های رسمی و سراسری",
+    "type": "خبرگزاری"
+  },
+  {
+    "name": "خبرگزاری آنا",
+    "url": "https://www.ana.ir/rss",
+    "category": "خبرگزاری‌های رسمی و سراسری",
+    "type": "خبرگزاری"
+  },
+  {
+    "name": "خبرگزاری کشاورزی ایران (ایانا)",
+    "url": "https://www.iana.ir/rss",
+    "category": "خبرگزاری‌های رسمی و سراسری",
+    "type": "خبرگزاری"
+  },
+  {
+    "name": "خبرگزاری کتاب ایران (ایبنا)",
+    "url": "https://www.ibna.ir/rss",
+    "category": "خبرگزاری‌های رسمی و سراسری",
+    "type": "خبرگزاری"
+  },
+  {
+    "name": "خبرگزاری دریایی ایران (مانا)",
+    "url": "https://www.mana.ir/rss",
+    "category": "خبرگزاری‌های رسمی و سراسری",
+    "type": "خبرگزاری"
+  },
+  {
+    "name": "خبرگزاری دانشجو",
+    "url": "https://www.snn.ir/rss",
+    "category": "خبرگزاری‌های رسمی و سراسری",
+    "type": "خبرگزاری"
+  },
+  {
+    "name": "خبرگزاری ایران‌پرس",
+    "url": "https://www.iranpress.com/rss",
+    "category": "خبرگزاری‌های رسمی و سراسری",
+    "type": "خبرگزاری"
+  },
+  {
+    "name": "خبرگزاری تقریب",
+    "url": "https://www.taghribnews.com/rss",
+    "category": "خبرگزاری‌های رسمی و سراسری",
+    "type": "خبرگزاری"
+  },
+  {
+    "name": "خبرگزاری دفاع مقدس",
+    "url": "https://www.defapress.ir/rss",
+    "category": "خبرگزاری‌های رسمی و سراسری",
+    "type": "خبرگزاری"
+  },
+  {
+    "name": "خبرآنلاین",
+    "url": "https://www.khabaronline.ir/rss",
+    "category": "پایگاه‌های خبری و تحلیلی",
+    "type": "پایگاه خبری"
+  },
+  {
+    "name": "تابناک",
+    "url": "https://www.tabnak.ir/fa/rss/allnews",
+    "category": "پایگاه‌های خبری و تحلیلی",
+    "type": "پایگاه خبری"
+  },
+  {
+    "name": "عصر ایران",
+    "url": "https://www.asriran.com/fa/rss/allnews",
+    "category": "پایگاه‌های خبری و تحلیلی",
+    "type": "پایگاه خبری"
+  },
+  {
+    "name": "انتخاب",
+    "url": "https://www.entekhab.ir/fa/rss/allnews",
+    "category": "پایگاه‌های خبری و تحلیلی",
+    "type": "پایگاه خبری"
+  },
+  {
+    "name": "همشهری آنلاین",
+    "url": "https://www.hamshahrionline.ir/rss",
+    "category": "پایگاه‌های خبری و تحلیلی",
+    "type": "پایگاه خبری"
+  },
+  {
+    "name": "فرارو",
+    "url": "https://www.fararu.com/rss",
+    "category": "پایگاه‌های خبری و تحلیلی",
+    "type": "پایگاه خبری"
+  },
+  {
+    "name": "مشرق‌نیوز",
+    "url": "https://www.mashreghnews.ir/rss",
+    "category": "پایگاه‌های خبری و تحلیلی",
+    "type": "پایگاه خبری"
+  },
+  {
+    "name": "دیدبان ایران",
+    "url": "https://www.didban.ir/rss",
+    "category": "پایگاه‌های خبری و تحلیلی",
+    "type": "پایگاه خبری"
+  },
+  {
+    "name": "اقتصاد آنلاین",
+    "url": "https://www.eghtesadonline.com/rss",
+    "category": "پایگاه‌های خبری و تحلیلی",
+    "type": "پایگاه خبری"
+  },
+  {
+    "name": "خبر فارسی",
+    "url": "https://khabarfarsi.com/rss",
+    "category": "پایگاه‌های خبری و تحلیلی",
+    "type": "پایگاه خبری"
+  },
+  {
+    "name": "تهران‌تایمز",
+    "url": "https://www.tehrantimes.com/rss",
+    "category": "پایگاه‌های خبری و تحلیلی",
+    "type": "پایگاه خبری"
+  },
+  {
+    "name": "ایران‌دیلی",
+    "url": "https://newspaper.irandaily.ir/rss",
+    "category": "پایگاه‌های خبری و تحلیلی",
+    "type": "پایگاه خبری"
+  },
+  {
+    "name": "فایننشال‌تریبون",
+    "url": "https://financialtribune.com/national.xml",
+    "category": "پایگاه‌های خبری و تحلیلی",
+    "type": "پایگاه خبری"
+  },
+  {
+    "name": "دیپلماسی ایرانی",
+    "url": "https://www.irdiplomacy.ir/rss",
+    "category": "پایگاه‌های خبری و تحلیلی",
+    "type": "پایگاه خبری"
+  },
+  {
+    "name": "پرس‌تی‌وی",
+    "url": "https://www.presstv.ir/rss",
+    "category": "پایگاه‌های خبری و تحلیلی",
+    "type": "پایگاه خبری"
+  },
+  {
+    "name": "رجانیوز",
+    "url": "https://www.rajanews.com/rss",
+    "category": "پایگاه‌های خبری و تحلیلی",
+    "type": "پایگاه خبری"
+  },
+  {
+    "name": "رادیو فردا",
+    "url": "https://www.radiofarda.com/api/",
+    "category": "پایگاه‌های خبری و تحلیلی",
+    "type": "پایگاه خبری"
+  },
+  {
+    "name": "خبرگزاری ایسنا (ورزشی > ویدیوی ورزشی (Sports Video))",
+    "url": "https://www.isna.ir/rss/tp/512",
+    "category": "ورزش",
     "type": "خبرگزاری"
   },
   {
@@ -32,12 +296,6 @@ export const SEED_FEEDS: SeedFeed[] = [
     "type": "خبرگزاری"
   },
   {
-    "name": "خبرگزاری پانا",
-    "url": "https://www.pana.ir/rss",
-    "category": "خبرگزاری‌های رسمی و سراسری",
-    "type": "خبرگزاری"
-  },
-  {
     "name": "خبرگزاری بین‌المللی قرآن (ایکنا)",
     "url": "https://iqna.ir/fa/rss",
     "category": "دین و فرهنگ",
@@ -52,12 +310,6 @@ export const SEED_FEEDS: SeedFeed[] = [
   {
     "name": "خبرگزاری شبستان",
     "url": "https://shabestan.news/rss",
-    "category": "دین و فرهنگ",
-    "type": "خبرگزاری تخصصی"
-  },
-  {
-    "name": "خبرگزاری حوزه",
-    "url": "https://www.hawzahnews.com/rss",
     "category": "دین و فرهنگ",
     "type": "خبرگزاری تخصصی"
   },
@@ -95,12 +347,6 @@ export const SEED_FEEDS: SeedFeed[] = [
     "name": "خبرگزاری دانشجو (SNN)",
     "url": "https://snn.ir/fa/rss/allnews",
     "category": "دانشجویی و عمومی",
-    "type": "خبرگزاری"
-  },
-  {
-    "name": "خبرگزاری ایمنا",
-    "url": "https://www.imna.ir/rss",
-    "category": "شهری و استانی",
     "type": "خبرگزاری"
   },
   {
@@ -164,12 +410,6 @@ export const SEED_FEEDS: SeedFeed[] = [
     "type": "خبرگزاری تخصصی"
   },
   {
-    "name": "سلامت‌نیوز",
-    "url": "https://www.salamatnews.com/rss",
-    "category": "سلامت و جامعه",
-    "type": "پایگاه خبری تخصصی"
-  },
-  {
     "name": "شفاآنلاین",
     "url": "https://shafaonline.ir/fa/rss/allnews",
     "category": "سلامت و پزشکی",
@@ -194,20 +434,8 @@ export const SEED_FEEDS: SeedFeed[] = [
     "type": "منبع رسمی"
   },
   {
-    "name": "مشرق نیوز",
-    "url": "https://www.mashreghnews.ir/rss",
-    "category": "سیاسی و عمومی",
-    "type": "پایگاه خبری"
-  },
-  {
     "name": "الف",
     "url": "https://www.alef.ir/rss",
-    "category": "سیاسی و عمومی",
-    "type": "پایگاه خبری"
-  },
-  {
-    "name": "رجانیوز",
-    "url": "https://www.rajanews.com/rss",
     "category": "سیاسی و عمومی",
     "type": "پایگاه خبری"
   },
@@ -302,12 +530,6 @@ export const SEED_FEEDS: SeedFeed[] = [
     "type": "تجمیع‌گر خبر"
   },
   {
-    "name": "خبر فارسی",
-    "url": "https://khabarfarsi.com/rss",
-    "category": "گردآوری خبر",
-    "type": "تجمیع‌گر خبر"
-  },
-  {
     "name": "رکنا",
     "url": "https://www.rokna.net/rss",
     "category": "حوادث و جامعه",
@@ -318,12 +540,6 @@ export const SEED_FEEDS: SeedFeed[] = [
     "url": "https://www.bartarinha.ir/fa/rss/allnews",
     "category": "عمومی و سبک زندگی",
     "type": "پایگاه خبری/مجله"
-  },
-  {
-    "name": "اقتصاد آنلاین",
-    "url": "https://www.eghtesadonline.com/rss",
-    "category": "اقتصاد و بازار",
-    "type": "پایگاه خبری تخصصی"
   },
   {
     "name": "اکوایران",
@@ -473,12 +689,6 @@ export const SEED_FEEDS: SeedFeed[] = [
     "name": "قدس آنلاین",
     "url": "https://www.qudsonline.ir/rss",
     "category": "عمومی و استانی",
-    "type": "روزنامه/پایگاه خبری"
-  },
-  {
-    "name": "همشهری آنلاین",
-    "url": "https://www.hamshahrionline.ir/rss",
-    "category": "شهری و عمومی",
     "type": "روزنامه/پایگاه خبری"
   },
   {
