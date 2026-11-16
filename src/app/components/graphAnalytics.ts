@@ -500,3 +500,737 @@ export function detectEchoChambers(
   }
   return out.sort((a, b) => b.cohesion - a.cohesion || b.members.length - a.members.length);
 }
+
+// ============================================================================
+// UPGRADE 1: Patient-Zero & Cascade Tree (ردیاب منشأ و شجره‌نامهٔ انتشار خبر)
+// ============================================================================
+
+export type CascadeWave = "origin" | "first5m" | "early30m" | "later";
+
+export type CascadeNode = {
+  id: string;
+  source: string;
+  icon?: string;
+  category?: string;
+  title: string;
+  link?: string;
+  ts: number;
+  delayMin: number;          // minutes after Patient-Zero
+  wave: CascadeWave;
+  parentId: string | null;   // ID of the upstream item it most likely propagated from
+  parentSource: string | null;
+  depth: number;             // 0 for Patient-Zero, 1+ for downstream branches
+  headlineSimilarity: number; // 0..1 Jaccard similarity vs. Patient-Zero headline
+  mutatedHeadline: boolean;  // true when headline was significantly altered (< 0.65)
+  mutationType: "منشأ اولیه" | "تیتر وفادار" | "تغییر زاویه تیتر" | "بازنویسی کامل تیتر";
+  addedKeywords: string[];   // new terms introduced in this headline vs. Patient-Zero
+};
+
+export type CascadeTreeSummary = {
+  clusterId: string;
+  patientZero: CascadeNode;
+  nodes: CascadeNode[];
+  first5mCount: number;
+  early30mCount: number;
+  laterCount: number;
+  mutatedCount: number;
+  maxDepth: number;
+};
+
+function tokenSetFromHeadline(title: string): Set<string> {
+  return new Set(cleanTokens(title));
+}
+
+function jaccardSets(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 && b.size === 0) return 1;
+  if (a.size === 0 || b.size === 0) return 0;
+  let inter = 0;
+  for (const x of a) if (b.has(x)) inter++;
+  const union = a.size + b.size - inter;
+  return union > 0 ? inter / union : 0;
+}
+
+export function buildCascadeTree(cluster: {
+  id: string;
+  items: { id: string; source: string; icon?: string; category?: string; title: string; preview?: string; link?: string; ts: number }[];
+}): CascadeTreeSummary | null {
+  if (!cluster || !Array.isArray(cluster.items) || cluster.items.length === 0) return null;
+
+  const sorted = [...cluster.items].sort((a, b) => a.ts - b.ts);
+  const originItem = sorted[0];
+  const originTokens = tokenSetFromHeadline(originItem.title);
+  const itemTokens = sorted.map(it => tokenSetFromHeadline(`${it.title} ${it.preview || ""}`));
+  const headlineTokens = sorted.map(it => tokenSetFromHeadline(it.title));
+
+  const nodes: CascadeNode[] = [];
+  let first5mCount = 0;
+  let early30mCount = 0;
+  let laterCount = 0;
+  let mutatedCount = 0;
+  let maxDepth = 0;
+
+  for (let i = 0; i < sorted.length; i++) {
+    const it = sorted[i];
+    const delayMin = Math.max(0, (it.ts - originItem.ts) / 60000);
+
+    if (i === 0) {
+      nodes.push({
+        id: it.id,
+        source: it.source,
+        icon: it.icon,
+        category: it.category,
+        title: it.title,
+        link: it.link,
+        ts: it.ts,
+        delayMin: 0,
+        wave: "origin",
+        parentId: null,
+        parentSource: null,
+        depth: 0,
+        headlineSimilarity: 1,
+        mutatedHeadline: false,
+        mutationType: "منشأ اولیه",
+        addedKeywords: [],
+      });
+      continue;
+    }
+
+    const wave: CascadeWave =
+      delayMin <= 5 ? "first5m" : delayMin <= 30 ? "early30m" : "later";
+    if (wave === "first5m") first5mCount++;
+    else if (wave === "early30m") early30mCount++;
+    else laterCount++;
+
+    // Find best upstream parent (earliest or most similar preceding item from a different source)
+    let bestParentIdx = 0;
+    let bestParentSim = -1;
+    for (let j = 0; j < i; j++) {
+      if (sorted[j].source === it.source) continue;
+      const sim = jaccardSets(itemTokens[i], itemTokens[j]);
+      // Slight preference for higher similarity and closer timestamp
+      const timeFactor = Math.max(0.7, 1 - (it.ts - sorted[j].ts) / (3600000 * 6));
+      const score = sim * timeFactor;
+      if (score > bestParentSim) {
+        bestParentSim = score;
+        bestParentIdx = j;
+      }
+    }
+
+    const parentNode = nodes[bestParentIdx] || nodes[0];
+    const depth = Math.min(6, parentNode.depth + 1);
+    if (depth > maxDepth) maxDepth = depth;
+
+    const hSim = jaccardSets(headlineTokens[i], originTokens);
+    const mutatedHeadline = hSim < 0.65;
+    if (mutatedHeadline) mutatedCount++;
+
+    const mutationType: CascadeNode["mutationType"] =
+      hSim >= 0.65
+        ? "تیتر وفادار"
+        : hSim >= 0.32
+          ? "تغییر زاویه تیتر"
+          : "بازنویسی کامل تیتر";
+
+    const addedKeywords: string[] = [];
+    for (const tk of headlineTokens[i]) {
+      if (!originTokens.has(tk) && tk.length >= 3) {
+        addedKeywords.push(tk);
+        if (addedKeywords.length >= 4) break;
+      }
+    }
+
+    nodes.push({
+      id: it.id,
+      source: it.source,
+      icon: it.icon,
+      category: it.category,
+      title: it.title,
+      link: it.link,
+      ts: it.ts,
+      delayMin,
+      wave,
+      parentId: parentNode.id,
+      parentSource: parentNode.source,
+      depth,
+      headlineSimilarity: hSim,
+      mutatedHeadline,
+      mutationType,
+      addedKeywords,
+    });
+  }
+
+  return {
+    clusterId: cluster.id,
+    patientZero: nodes[0],
+    nodes,
+    first5mCount,
+    early30mCount,
+    laterCount,
+    mutatedCount,
+    maxDepth,
+  };
+}
+
+// ============================================================================
+// UPGRADE 2: Advanced Centrality Metrics (Betweenness & Lead-Lag Score)
+// ============================================================================
+
+export type CentralityNodeMetric = {
+  id: string;
+  name: string;
+  icon: string;
+  category: string;
+  pagerank: number;
+  betweenness: number;      // 0..1 normalized bridge score (Brandes + cross-pole bridging)
+  leadLagMin: number;       // negative = ahead of median (leader), positive = behind median (follower)
+  avgDelayFromOriginMin: number;
+  first5mCount: number;     // number of clusters where this source published within 5 min of Patient-Zero
+  clusterCount: number;
+  pole: "domestic" | "international";
+  role: "پیشتاز خبرساز" | "پل ارتباطی" | "تثبیت‌کننده جریان" | "بازنشرکننده";
+};
+
+export function classifyPole(category?: string, sourceName?: string, title?: string): "domestic" | "international" {
+  const cat = String(category || "");
+  if (cat.includes("بین‌الملل")) return "international";
+  if (cat.includes("داخلی")) return "domestic";
+  const s = `${sourceName || ""} ${title || ""}`;
+  const latin = (s.match(/[A-Za-z]/g) || []).length;
+  const persian = (s.match(/[\u0600-\u06FF]/g) || []).length;
+  return latin > persian ? "international" : "domestic";
+}
+
+export function computeAdvancedCentrality(
+  nodes: { id: string; name: string; icon: string; category: string; pagerank: number; firstCount: number }[],
+  edges: { source: string; target: string; weight: number }[],
+  clusters: { id: string; origin: { source: string; ts: number }; items: { source: string; ts: number }[] }[],
+): CentralityNodeMetric[] {
+  const n = nodes.length;
+  if (n === 0) return [];
+
+  const poleOf = new Map<string, "domestic" | "international">();
+  for (const nd of nodes) {
+    poleOf.set(nd.id, classifyPole(nd.category, nd.name));
+  }
+
+  // 1) Unweighted Brandes shortest-path betweenness centrality on undirected adjacency
+  const adj = new Map<string, Set<string>>();
+  const crossPoleWeight = new Map<string, number>();
+  for (const nd of nodes) {
+    adj.set(nd.id, new Set());
+    crossPoleWeight.set(nd.id, 0);
+  }
+  for (const e of edges) {
+    const u = typeof e.source === "object" ? (e.source as any).id : e.source;
+    const v = typeof e.target === "object" ? (e.target as any).id : e.target;
+    if (!adj.has(u) || !adj.has(v) || u === v) continue;
+    adj.get(u)!.add(v);
+    adj.get(v)!.add(u);
+    if (poleOf.get(u) !== poleOf.get(v)) {
+      crossPoleWeight.set(u, (crossPoleWeight.get(u) || 0) + e.weight);
+      crossPoleWeight.set(v, (crossPoleWeight.get(v) || 0) + e.weight);
+    }
+  }
+
+  const cb = new Map<string, number>();
+  for (const nd of nodes) cb.set(nd.id, 0);
+
+  for (const sNode of nodes) {
+    const s = sNode.id;
+    const stack: string[] = [];
+    const pred = new Map<string, string[]>();
+    const sigma = new Map<string, number>();
+    const dist = new Map<string, number>();
+    for (const nd of nodes) {
+      pred.set(nd.id, []);
+      sigma.set(nd.id, 0);
+      dist.set(nd.id, -1);
+    }
+    sigma.set(s, 1);
+    dist.set(s, 0);
+    const queue: string[] = [s];
+
+    while (queue.length > 0) {
+      const v = queue.shift()!;
+      stack.push(v);
+      const dv = dist.get(v)!;
+      for (const w of adj.get(v) || []) {
+        if (dist.get(w)! < 0) {
+          queue.push(w);
+          dist.set(w, dv + 1);
+        }
+        if (dist.get(w) === dv + 1) {
+          sigma.set(w, sigma.get(w)! + sigma.get(v)!);
+          pred.get(w)!.push(v);
+        }
+      }
+    }
+
+    const delta = new Map<string, number>();
+    for (const nd of nodes) delta.set(nd.id, 0);
+    while (stack.length > 0) {
+      const w = stack.pop()!;
+      const sw = sigma.get(w) || 1;
+      for (const v of pred.get(w) || []) {
+        const c = (sigma.get(v)! / sw) * (1 + delta.get(w)!);
+        delta.set(v, delta.get(v)! + c);
+      }
+      if (w !== s) {
+        cb.set(w, cb.get(w)! + delta.get(w)!);
+      }
+    }
+  }
+
+  const maxCb = Math.max(1e-6, ...Array.from(cb.values()));
+  const maxCross = Math.max(1, ...Array.from(crossPoleWeight.values()));
+
+  // 2) Lead-Lag score (minutes relative to cluster median timestamp)
+  const leadDeltas = new Map<string, number[]>();
+  const originDelays = new Map<string, number[]>();
+  const first5mCounts = new Map<string, number>();
+  for (const nd of nodes) {
+    leadDeltas.set(nd.id, []);
+    originDelays.set(nd.id, []);
+    first5mCounts.set(nd.id, 0);
+  }
+
+  for (const c of clusters) {
+    if (!c.items || c.items.length < 2) continue;
+    // Earliest timestamp per source in this cluster
+    const earliestBySource = new Map<string, number>();
+    for (const it of c.items) {
+      const prev = earliestBySource.get(it.source);
+      if (prev === undefined || it.ts < prev) earliestBySource.set(it.source, it.ts);
+    }
+    const tsValues = Array.from(earliestBySource.values()).sort((a, b) => a - b);
+    const midIdx = Math.floor(tsValues.length / 2);
+    const medianTs =
+      tsValues.length % 2 === 1
+        ? tsValues[midIdx]
+        : (tsValues[midIdx - 1] + tsValues[midIdx]) / 2;
+
+    for (const [src, ts] of earliestBySource.entries()) {
+      if (!leadDeltas.has(src)) continue;
+      const deltaMedianMin = (ts - medianTs) / 60000;
+      const delayOriginMin = Math.max(0, (ts - c.origin.ts) / 60000);
+      leadDeltas.get(src)!.push(deltaMedianMin);
+      originDelays.get(src)!.push(delayOriginMin);
+      if (delayOriginMin <= 5) {
+        first5mCounts.set(src, (first5mCounts.get(src) || 0) + 1);
+      }
+    }
+  }
+
+  return nodes.map(nd => {
+    const rawBetweenness = (cb.get(nd.id) || 0) / maxCb;
+    const crossBridge = (crossPoleWeight.get(nd.id) || 0) / maxCross;
+    const betweenness = Math.min(1, rawBetweenness * 0.65 + crossBridge * 0.35);
+
+    const deltas = leadDeltas.get(nd.id) || [];
+    const oDelays = originDelays.get(nd.id) || [];
+    const leadLagMin =
+      deltas.length > 0 ? deltas.reduce((a, b) => a + b, 0) / deltas.length : 0;
+    const avgDelayFromOriginMin =
+      oDelays.length > 0 ? oDelays.reduce((a, b) => a + b, 0) / oDelays.length : 0;
+    const first5mCount = first5mCounts.get(nd.id) || 0;
+
+    let role: CentralityNodeMetric["role"] = "بازنشرکننده";
+    if (leadLagMin < -2 || nd.firstCount >= 2) role = "پیشتاز خبرساز";
+    else if (betweenness >= 0.45) role = "پل ارتباطی";
+    else if (nd.pagerank >= 0.4) role = "تثبیت‌کننده جریان";
+
+    return {
+      id: nd.id,
+      name: nd.name,
+      icon: nd.icon,
+      category: nd.category,
+      pagerank: nd.pagerank,
+      betweenness,
+      leadLagMin,
+      avgDelayFromOriginMin,
+      first5mCount,
+      clusterCount: deltas.length,
+      pole: poleOf.get(nd.id) || "domestic",
+      role,
+    };
+  });
+}
+
+// ============================================================================
+// UPGRADE 3: Coordinated Inauthentic Behavior / Syndication Detector
+// ============================================================================
+
+export type SyndicationPair = {
+  sourceA: string;
+  sourceB: string;
+  titleA: string;
+  titleB: string;
+  deltaSec: number;
+  similarity: number; // 0..1
+  ts: number;
+};
+
+export type SyndicationGroup = {
+  id: string;
+  sources: string[];
+  pairCount: number;
+  avgDeltaSec: number;
+  maxSimilarity: number;
+  strictMatch: boolean; // true if <= 2 min and >= 0.85 similarity
+  sampleTitle: string;
+  pairs: SyndicationPair[];
+};
+
+function charShingles(s: string, k = 4): Set<string> {
+  const clean = normKey(s).replace(/\s+/g, " ");
+  const out = new Set<string>();
+  for (let i = 0; i <= clean.length - k; i++) {
+    out.add(clean.slice(i, i + k));
+  }
+  if (out.size === 0 && clean) out.add(clean);
+  return out;
+}
+
+export function computeTextSimilarity(aTitle: string, aPreview: string, bTitle: string, bPreview: string): number {
+  const tokA = tokenSetFromHeadline(`${aTitle} ${aPreview || ""}`);
+  const tokB = tokenSetFromHeadline(`${bTitle} ${bPreview || ""}`);
+  const titleTokA = tokenSetFromHeadline(aTitle);
+  const titleTokB = tokenSetFromHeadline(bTitle);
+  const charA = charShingles(aTitle, 4);
+  const charB = charShingles(bTitle, 4);
+
+  const s1 = jaccardSets(titleTokA, titleTokB);
+  const s2 = jaccardSets(tokA, tokB);
+  const s3 = jaccardSets(charA, charB);
+  return Math.max(s1, s2, s3);
+}
+
+export function detectCoordinatedSyndication(
+  items: { id: string; source: string; title: string; preview?: string; ts: number }[],
+  maxWindowMin = 2,
+  minSimilarity = 0.85,
+): SyndicationGroup[] {
+  if (!Array.isArray(items) || items.length < 2) return [];
+
+  const sorted = [...items].sort((a, b) => a.ts - b.ts);
+  const maxWindowMs = maxWindowMin * 60 * 1000;
+
+  const findPairs = (winMs: number, simThresh: number): SyndicationPair[] => {
+    const found: SyndicationPair[] = [];
+    for (let i = 0; i < sorted.length; i++) {
+      const A = sorted[i];
+      for (let j = i + 1; j < sorted.length; j++) {
+        const B = sorted[j];
+        const diffMs = B.ts - A.ts;
+        if (diffMs > winMs) break;
+        if (A.source === B.source) continue;
+        const sim = computeTextSimilarity(A.title, A.preview || "", B.title, B.preview || "");
+        if (sim >= simThresh) {
+          found.push({
+            sourceA: A.source,
+            sourceB: B.source,
+            titleA: A.title,
+            titleB: B.title,
+            deltaSec: Math.round(diffMs / 1000),
+            similarity: sim,
+            ts: A.ts,
+          });
+        }
+      }
+    }
+    return found;
+  };
+
+  let pairs = findPairs(maxWindowMs, minSimilarity);
+  let strictMatch = true;
+
+  // If no ultra-strict (<=2m & >=85%) match in current live window, also surface near-synchronous syndication (<=10m & >=55%)
+  if (pairs.length === 0) {
+    pairs = findPairs(Math.max(maxWindowMs, 10 * 60 * 1000), Math.min(minSimilarity, 0.55));
+    strictMatch = false;
+  }
+
+  if (pairs.length === 0) return [];
+
+  // Group connected sources via Union-Find
+  const parent = new Map<string, string>();
+  const ensure = (s: string) => {
+    if (!parent.has(s)) parent.set(s, s);
+  };
+  const find = (x: string): string => {
+    const p = parent.get(x)!;
+    if (p === x) return x;
+    const r = find(p);
+    parent.set(x, r);
+    return r;
+  };
+  const unite = (a: string, b: string) => {
+    ensure(a);
+    ensure(b);
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent.set(ra, rb);
+  };
+
+  for (const p of pairs) unite(p.sourceA, p.sourceB);
+
+  const groupedPairs = new Map<string, SyndicationPair[]>();
+  for (const p of pairs) {
+    const root = find(p.sourceA);
+    if (!groupedPairs.has(root)) groupedPairs.set(root, []);
+    groupedPairs.get(root)!.push(p);
+  }
+
+  const groups: SyndicationGroup[] = [];
+  let idx = 0;
+  for (const [, gPairs] of groupedPairs.entries()) {
+    const srcSet = new Set<string>();
+    let sumDelta = 0;
+    let maxSim = 0;
+    for (const p of gPairs) {
+      srcSet.add(p.sourceA);
+      srcSet.add(p.sourceB);
+      sumDelta += p.deltaSec;
+      if (p.similarity > maxSim) maxSim = p.similarity;
+    }
+    groups.push({
+      id: `syn-${idx++}`,
+      sources: Array.from(srcSet),
+      pairCount: gPairs.length,
+      avgDeltaSec: Math.round(sumDelta / gPairs.length),
+      maxSimilarity: maxSim,
+      strictMatch: strictMatch && maxSim >= minSimilarity,
+      sampleTitle: gPairs[0].titleA,
+      pairs: gPairs.sort((a, b) => b.similarity - a.similarity).slice(0, 8),
+    });
+  }
+
+  return groups.sort((a, b) => b.maxSimilarity - a.maxSimilarity || a.avgDeltaSec - b.avgDeltaSec);
+}
+
+// ============================================================================
+// UPGRADE 4: Coverage Blindspot & Asymmetry Analyzer
+// ============================================================================
+
+export type BlindspotEntry = {
+  clusterId: string;
+  title: string;
+  originSource: string;
+  domesticCount: number;
+  intlCount: number;
+  totalCount: number;
+  domesticShare: number;   // 0..1
+  intlShare: number;       // 0..1
+  asymmetryScore: number;  // -1 (100% domestic) to +1 (100% international)
+  blindspotType: "blindspot_intl" | "blindspot_domestic" | "cross_covered";
+  blindspotLabel: string;
+  domesticSources: string[];
+  intlSources: string[];
+};
+
+export type BlindspotReport = {
+  entries: BlindspotEntry[];
+  domesticOnlyCount: number;
+  intlOnlyCount: number;
+  crossCoveredCount: number;
+  totalDomesticArticles: number;
+  totalIntlArticles: number;
+};
+
+export function analyzeCoverageBlindspots(
+  clusters: {
+    id: string;
+    origin: { source: string; title: string; ts: number };
+    items: { id: string; source: string; category?: string; title: string; ts: number }[];
+  }[],
+): BlindspotReport {
+  let totalDomesticArticles = 0;
+  let totalIntlArticles = 0;
+  let domesticOnlyCount = 0;
+  let intlOnlyCount = 0;
+  let crossCoveredCount = 0;
+
+  const entries: BlindspotEntry[] = [];
+
+  for (const c of clusters) {
+    const domSources = new Set<string>();
+    const intlSources = new Set<string>();
+    let domCount = 0;
+    let intlCount = 0;
+
+    for (const it of c.items) {
+      const pole = classifyPole(it.category, it.source, it.title);
+      if (pole === "international") {
+        intlCount++;
+        totalIntlArticles++;
+        intlSources.add(it.source);
+      } else {
+        domCount++;
+        totalDomesticArticles++;
+        domSources.add(it.source);
+      }
+    }
+
+    const total = Math.max(1, domCount + intlCount);
+    const domesticShare = domCount / total;
+    const intlShare = intlCount / total;
+    const asymmetryScore = (intlCount - domCount) / total;
+
+    let blindspotType: BlindspotEntry["blindspotType"] = "cross_covered";
+    let blindspotLabel = "پوشش مشترک دو قطب";
+    if (domesticShare >= 0.8) {
+      blindspotType = "blindspot_intl";
+      blindspotLabel = "نقطهٔ کور رسانه‌های بین‌المللی";
+      domesticOnlyCount++;
+    } else if (intlShare >= 0.8) {
+      blindspotType = "blindspot_domestic";
+      blindspotLabel = "نقطهٔ کور رسانه‌های داخلی";
+      intlOnlyCount++;
+    } else {
+      crossCoveredCount++;
+    }
+
+    entries.push({
+      clusterId: c.id,
+      title: c.origin.title,
+      originSource: c.origin.source,
+      domesticCount: domCount,
+      intlCount,
+      totalCount: total,
+      domesticShare,
+      intlShare,
+      asymmetryScore,
+      blindspotType,
+      blindspotLabel,
+      domesticSources: Array.from(domSources),
+      intlSources: Array.from(intlSources),
+    });
+  }
+
+  entries.sort((a, b) => b.totalCount - a.totalCount);
+
+  return {
+    entries,
+    domesticOnlyCount,
+    intlOnlyCount,
+    crossCoveredCount,
+    totalDomesticArticles,
+    totalIntlArticles,
+  };
+}
+
+// ============================================================================
+// UPGRADE 5: Local Deterministic Narrative Divergence Preview / Fallback
+// ============================================================================
+
+export type NarrativeDivergenceResult = {
+  summary: string;
+  agreedFacts: string[];
+  framingDifferences: { side: string; sources: string[]; framing: string; tone: string }[];
+  loadedVocabulary: { term: string; usedBy: string; connotation: string }[];
+};
+
+export function computeLocalNarrativeDivergence(cluster: {
+  id: string;
+  origin: { title: string; source: string };
+  items: { id: string; source: string; category?: string; title: string; preview?: string }[];
+}): NarrativeDivergenceResult {
+  const domItems = cluster.items.filter(it => classifyPole(it.category, it.source, it.title) === "domestic");
+  const intlItems = cluster.items.filter(it => classifyPole(it.category, it.source, it.title) === "international");
+
+  // Extract shared tokens across items as agreed facts
+  const docFreq = new Map<string, number>();
+  for (const it of cluster.items) {
+    const uniq = new Set(cleanTokens(`${it.title} ${it.preview || ""}`));
+    for (const tk of uniq) docFreq.set(tk, (docFreq.get(tk) || 0) + 1);
+  }
+  const sharedTerms = Array.from(docFreq.entries())
+    .filter(([, c]) => c >= Math.max(2, Math.ceil(cluster.items.length * 0.4)))
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 6)
+    .map(([t]) => t);
+
+  const agreedFacts = [
+    `محور اصلی خبر: «${cluster.origin.title}» که نخستین بار توسط «${cluster.origin.source}» منتشر شد.`,
+    `پوشش هم‌زمان توسط ${cluster.items.length} رسانه (${domItems.length} منبع داخلی و ${intlItems.length} منبع بین‌المللی).`,
+    sharedTerms.length > 0
+      ? `کلیدواژه‌ها و فکت‌های مشترک در تمامی گزارش‌ها: ${sharedTerms.join("، ")}.`
+      : "اشتراک در گزارش اصل وقوع رویداد و زمان‌بندی اولیه خبر.",
+  ];
+
+  const framingDifferences: NarrativeDivergenceResult["framingDifferences"] = [];
+  if (domItems.length > 0) {
+    framingDifferences.push({
+      side: "رسانه‌های داخلی",
+      sources: Array.from(new Set(domItems.map(i => i.source))).slice(0, 5),
+      framing: domItems[0].title,
+      tone: "تمرکز بر ابعاد اجرایی، مواضع رسمی و بازتاب داخلی رویداد",
+    });
+  }
+  if (intlItems.length > 0) {
+    framingDifferences.push({
+      side: "رسانه‌های بین‌المللی",
+      sources: Array.from(new Set(intlItems.map(i => i.source))).slice(0, 5),
+      framing: intlItems[0].title,
+      tone: "تمرکز بر پیامدهای ژئوپولیتیک، واکنش‌های دیپلماتیک و زمینهٔ منطقه‌ای",
+    });
+  }
+  if (framingDifferences.length < 2 && cluster.items.length >= 2) {
+    framingDifferences.push({
+      side: `روایت بازنشرکنندگان (${cluster.items[cluster.items.length - 1].source})`,
+      sources: Array.from(new Set(cluster.items.slice(1).map(i => i.source))).slice(0, 5),
+      framing: cluster.items[cluster.items.length - 1].title,
+      tone: "بازنمایی ثانویه با برجسته‌سازی بخش خاصی از تیتر اولیه",
+    });
+  }
+
+  // Distinctive terms per side
+  const domFreq = new Map<string, number>();
+  const intlFreq = new Map<string, number>();
+  for (const it of domItems) {
+    for (const tk of cleanTokens(it.title)) if (tk.length >= 3) domFreq.set(tk, (domFreq.get(tk) || 0) + 1);
+  }
+  for (const it of intlItems) {
+    for (const tk of cleanTokens(it.title)) if (tk.length >= 3) intlFreq.set(tk, (intlFreq.get(tk) || 0) + 1);
+  }
+
+  const loadedVocabulary: NarrativeDivergenceResult["loadedVocabulary"] = [];
+  for (const [tk, cnt] of Array.from(domFreq.entries()).sort((a, b) => b[1] - a[1])) {
+    if (!intlFreq.has(tk) && loadedVocabulary.length < 3) {
+      loadedVocabulary.push({
+        term: tk,
+        usedBy: "رسانه‌های داخلی",
+        connotation: `تکرار در ${cnt} تیتر داخلی برای برجسته‌سازی زاویهٔ بومی`,
+      });
+    }
+  }
+  for (const [tk, cnt] of Array.from(intlFreq.entries()).sort((a, b) => b[1] - a[1])) {
+    if (!domFreq.has(tk) && loadedVocabulary.length < 6) {
+      loadedVocabulary.push({
+        term: tk,
+        usedBy: "رسانه‌های بین‌المللی",
+        connotation: `تکرار در ${cnt} تیتر بین‌المللی برای قاب‌بندی خارجی خبر`,
+      });
+    }
+  }
+  if (loadedVocabulary.length === 0) {
+    for (const tk of sharedTerms.slice(0, 3)) {
+      loadedVocabulary.push({
+        term: tk,
+        usedBy: "مشترک در خوشه",
+        connotation: "واژهٔ کانونی در تیترهای منتشرشده",
+      });
+    }
+  }
+
+  return {
+    summary:
+      domItems.length > 0 && intlItems.length > 0
+        ? `این رویداد هم در رسانه‌های داخلی (${domItems.length} گزارش) و هم در رسانه‌های بین‌المللی (${intlItems.length} گزارش) بازتاب یافته و در نحوهٔ تیترزنی و زاویهٔ دید تفاوت قاب‌بندی مشاهده می‌شود.`
+        : `این خوشهٔ خبری توسط ${cluster.items.length} منبع پوشش داده شده و مقایسهٔ تیترها نشان‌دهندهٔ تفاوت در انتخاب کلیدواژه‌های کانونی است.`,
+    agreedFacts,
+    framingDifferences,
+    loadedVocabulary,
+  };
+}
+

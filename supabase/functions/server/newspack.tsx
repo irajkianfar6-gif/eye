@@ -149,8 +149,7 @@ async function fetchFeed(url: string): Promise<FeedItem[]> {
       out.push({ title, summary, link: rawLink, publishedAt: Number.isFinite(publishedAt) ? publishedAt : 0, image: extractImage(it) });
     }
     return out;
-  } catch (e) {
-    console.log("newspack fetchFeed error:", url, String(e));
+  } catch {
     return [];
   }
 }

@@ -9,6 +9,7 @@ import {
   normalizeFa,
   detectLang,
   contentSig,
+  buildGoogleNewsFallbackUrls,
 } from "./feedParser";
 
 test("parseFeedXml parses standard RSS 2.0 feed with media:content and HTML entities", () => {
@@ -107,3 +108,33 @@ test("normalizeFa and contentSig deduplicate equivalent Persian headlines and UR
   assert.equal(detectLang("تقرير إخباري عن الأسواق المالية العالمية"), "ar");
   assert.equal(detectLang("Global Economy Outlook for 2026"), "other");
 });
+
+test("buildGoogleNewsFallbackUrls builds locale-aware fallback URLs and parseFeedXml cleans Google News titles", () => {
+  const frUrls = buildGoogleNewsFallbackUrls("https://www.france24.com/en/rss");
+  assert.equal(frUrls.length, 2);
+  assert.ok(frUrls[0].includes("site:france24.com") && frUrls[0].includes("hl=en-US"));
+
+  const irUrls = buildGoogleNewsFallbackUrls("https://www.tasnimnews.com/fa/rss/feed/0/8/0/top");
+  assert.equal(irUrls.length, 2);
+  assert.ok(irUrls[0].includes("site:tasnimnews.com") && irUrls[0].includes("hl=fa&gl=IR"));
+
+  const gnewsXml = `<?xml version="1.0" encoding="UTF-8"?>
+    <rss version="2.0">
+      <channel>
+        <title>"site:france24.com" - Google News</title>
+        <item>
+          <title>European Summit Reaches Historic Climate Deal - France 24</title>
+          <link>https://news.google.com/rss/articles/CBMi123</link>
+          <pubDate>Tue, 21 Apr 2026 11:00:00 GMT</pubDate>
+          <description>European leaders agreed on a new framework in Brussels.</description>
+          <source url="https://www.france24.com">France 24</source>
+        </item>
+      </channel>
+    </rss>`;
+
+  const parsed = parseFeedXml(gnewsXml, "https://www.france24.com/en/rss", "feed_f24");
+  assert.equal(parsed.length, 1);
+  assert.equal(parsed[0].title, "European Summit Reaches Historic Climate Deal");
+  assert.equal(parsed[0].source, "France 24");
+});
+

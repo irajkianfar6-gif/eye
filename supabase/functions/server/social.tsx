@@ -182,7 +182,6 @@ async function collectPosts(topic: WatchTopic): Promise<{ posts: SocialPost[]; e
         }
       } catch (e) {
         errors.push({ source: src.name, error: String(e).slice(0, 160) });
-        console.log(`social source ${src.url} failed:`, String(e).slice(0, 160));
       }
     }
   };

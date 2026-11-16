@@ -210,6 +210,77 @@ export function contentSig(title: string, link: string): string {
   return "t:" + t.slice(0, 90);
 }
 
+const HOST_TO_DOMAIN: Record<string, string> = {
+  "feeds.content.dowjones.io": "wsj.com",
+  "feeds.bbci.co.uk": "bbc.com",
+  "moxie.foxnews.com": "foxnews.com",
+  "feeds.skynews.com": "news.sky.com",
+  "feeds.abcnews.com": "abcnews.go.com",
+  "feeds.nbcnews.com": "nbcnews.com",
+  "feeds.npr.org": "npr.org",
+  "feeds.washingtonpost.com": "washingtonpost.com",
+  "rss.nytimes.com": "nytimes.com",
+  "rss.politico.com": "politico.com",
+  "rss.upi.com": "upi.com",
+  "rss.cnn.com": "cnn.com",
+  "rss.dw.com": "dw.com",
+};
+
+const PERSIAN_BRANDS = new Set([
+  "tasnimnews",
+  "mehrnews",
+  "khabaronline",
+  "asriran",
+  "entekhab",
+  "fararu",
+  "tabnak",
+  "hamshahrionline",
+  "mashreghnews",
+  "eghtesadonline",
+  "donya-e-eqtesad",
+  "varzesh3",
+  "zoomit",
+  "digiato",
+  "radiofarda",
+  "shafaqna",
+  "hawzahnews",
+  "salamatnews",
+  "tarafdari",
+  "khabarvarzeshi",
+  "ensafnews",
+  "rouydad24",
+  "arzdigital",
+  "energypress",
+  "jamaran",
+  "poollnews",
+  "noandish",
+  "mizanonline",
+  "qudsonline",
+]);
+
+export function buildGoogleNewsFallbackUrls(feedUrl: string): string[] {
+  try {
+    const u = new URL(feedUrl);
+    const host = u.hostname.toLowerCase();
+    if (!host || host.includes("news.google.com")) return [];
+    const domain =
+      HOST_TO_DOMAIN[host] ||
+      host.replace(/^(www|feeds|rss|m|en|fa|ar|parsi|api|syndication|xml)\./i, "");
+    const brand = domain.split(".")[0] || domain;
+    const isPersian =
+      domain.endsWith(".ir") ||
+      /persian|farsi|parsi|\/fa(\/|$)/i.test(feedUrl) ||
+      PERSIAN_BRANDS.has(brand);
+    const locale = isPersian ? "hl=fa&gl=IR&ceid=IR:fa" : "hl=en-US&gl=US&ceid=US:en";
+    return [
+      `https://news.google.com/rss/search?q=site:${encodeURIComponent(domain)}&${locale}`,
+      `https://news.google.com/rss/search?q=${encodeURIComponent(brand)}&${locale}`,
+    ];
+  } catch {
+    return [];
+  }
+}
+
 export function parseFeedXml(xml: string, fallbackUrl: string, feedId: string): ParsedFeedItem[] {
   const trimmed = String(xml || "").trim();
   if (!trimmed) throw new Error("empty feed response");
@@ -224,7 +295,9 @@ export function parseFeedXml(xml: string, fallbackUrl: string, feedId: string): 
     throw new Error("invalid feed format");
   }
 
-  const feedTitle = stripHtml(getText(channel.title || rdfRoot?.channel?.title)) || fallbackUrl;
+  const rawFeedTitle = stripHtml(getText(channel.title || rdfRoot?.channel?.title));
+  const isGoogleNewsChannel = /google news|^"site:/i.test(rawFeedTitle);
+  const feedTitle = (!isGoogleNewsChannel && rawFeedTitle) || fallbackUrl;
   const rawItems =
     rssChannel?.item ||
     atomFeed?.entry ||
@@ -238,7 +311,11 @@ export function parseFeedXml(xml: string, fallbackUrl: string, feedId: string): 
     .slice(0, 30)
     .map((it: any, i: number) => {
       const rawTitle = getText(it?.title);
-      const cleanTitle = stripHtml(rawTitle);
+      const itemSource = stripHtml(getText(it?.source));
+      let cleanTitle = stripHtml(rawTitle);
+      if (itemSource && cleanTitle.endsWith(` - ${itemSource}`)) {
+        cleanTitle = cleanTitle.slice(0, -(` - ${itemSource}`).length).trim();
+      }
       const link = extractLink(it?.link, it?.guid || it?.id);
       const rawDate =
         it?.pubDate ||
@@ -259,14 +336,15 @@ export function parseFeedXml(xml: string, fallbackUrl: string, feedId: string): 
           : getText(it?.author || it?.["dc:creator"]);
       const cleanDesc = stripHtml(description);
       const cleanContent = stripHtml(content) || cleanDesc;
+      const effectiveSource = itemSource || feedTitle;
 
       return {
         id,
         feedId,
         title: cleanTitle || cleanDesc.slice(0, 90) || "بدون عنوان",
         link,
-        source: feedTitle,
-        author: stripHtml(authorRaw) || feedTitle,
+        source: effectiveSource,
+        author: stripHtml(authorRaw) || effectiveSource,
         date,
         preview: cleanDesc.slice(0, 280),
         content: cleanContent,
@@ -276,3 +354,4 @@ export function parseFeedXml(xml: string, fallbackUrl: string, feedId: string): 
     })
     .filter((item) => Boolean(item.title && item.title !== "بدون عنوان"));
 }
+

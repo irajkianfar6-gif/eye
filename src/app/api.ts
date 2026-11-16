@@ -109,6 +109,49 @@ export const api = {
     req(`/ai/translate${u ? `?u=${encodeURIComponent(u)}` : ""}`, { method: "POST", body: JSON.stringify(payload) }).then(r => r.text as string),
   aiTranslateBatch: (payload: { texts: string[]; to: "en" | "fa" }, u?: string) =>
     req(`/ai/translate-batch${u ? `?u=${encodeURIComponent(u)}` : ""}`, { method: "POST", body: JSON.stringify(payload) }).then(r => r.texts as string[]),
+  aiGraphDivergence: (
+    payload: { clusterTitle: string; items: { source: string; category?: string; title: string; preview?: string }[] },
+    u?: string,
+  ) =>
+    req(`/ai/graph-divergence${u ? `?u=${encodeURIComponent(u)}` : ""}`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }).then(
+      r =>
+        r.divergence as {
+          summary: string;
+          agreedFacts: string[];
+          framingDifferences: { side: string; sources: string[]; framing: string; tone: string }[];
+          loadedVocabulary: { term: string; usedBy: string; connotation: string }[];
+        },
+    ),
+  aiGraphBrief: (
+    payload: {
+      stats: Record<string, any>;
+      topClusters: { title: string; origin: string; size: number; velocity: string }[];
+      topBridges: { name: string; score: string }[];
+      topLeaders: { name: string; leadLag: string }[];
+      syndicationCount: number;
+      blindspotSummary: string;
+      emergingSignals: string[];
+    },
+    u?: string,
+  ) =>
+    req(`/ai/graph-brief${u ? `?u=${encodeURIComponent(u)}` : ""}`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }).then(
+      r =>
+        r.brief as {
+          headline: string;
+          executiveSummary: string;
+          dominantClusters: { title: string; origin: string; reach: number; analysis: string }[];
+          keyInfluencersAndBridges: { name: string; role: string; insight: string }[];
+          emergingWeakSignals: string[];
+          blindspotAlert: string;
+          generatedAt: number;
+        },
+    ),
 
   // ── Per-user AI key (BYO) ──
   aiGetConfig: (u: string) =>

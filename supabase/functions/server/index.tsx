@@ -18,6 +18,7 @@ import {
   detectLang,
   contentSig,
   safeDateMs,
+  buildGoogleNewsFallbackUrls,
 } from "./feedParser";
 
 const app = new Hono();
@@ -376,6 +377,168 @@ app.post(`${BASE}/ai/digest`, async (c) => {
   } catch (e) {
     console.log("ai/digest error:", String(e));
     return c.json({ error: String(e) }, 500);
+  }
+});
+
+// AI Narrative Divergence Inspector — compares domestic vs. international or multi-outlet framings
+app.post(`${BASE}/ai/graph-divergence`, async (c) => {
+  try {
+    const { clusterTitle = "", items = [] } = await c.req.json();
+    const list = (Array.isArray(items) ? items : []).slice(0, 20);
+    if (list.length === 0) return c.json({ error: "items required" }, 400);
+
+    const formatted = list
+      .map(
+        (it: any, idx: number) =>
+          `${idx + 1}. [${String(it.source || "").slice(0, 40)} | ${String(it.category || "عمومی").slice(0, 40)}] تیتر: ${String(it.title || "").slice(0, 220)}${it.preview ? ` — خلاصه: ${String(it.preview).slice(0, 180)}` : ""}`,
+      )
+      .join("\n");
+
+    const sys =
+      "تو تحلیلگر ارشد رسانه و زبان‌شناس سیاسی هستی. یک خوشهٔ خبری که توسط چند رسانه (داخلی و/یا بین‌المللی) پوشش داده شده به تو داده می‌شود. " +
+      "وظیفهٔ تو کالبدشکافی دقیق اختلاف روایت در ۳ بخش است. فقط و فقط یک شیء JSON معتبر برگردان با ساختار دقیق زیر:\n" +
+      "{\n" +
+      '  "summary": "جمع‌بندی دو جمله‌ای از چگونگی بازتاب این رویداد",\n' +
+      '  "agreedFacts": ["فکت مورد توافق ۱", "فکت مورد توافق ۲", "فکت مورد توافق ۳"],\n' +
+      '  "framingDifferences": [\n' +
+      '    {"side": "نام قطب یا گروه رسانه‌ای (مثلاً رسانه‌های داخلی / رسانه‌های بین‌المللی)", "sources": ["نام منبع ۱", "نام منبع ۲"], "framing": "چگونگی برجسته‌سازی و زاویه دید", "tone": "لحن غالب"}\n' +
+      "  ],\n" +
+      '  "loadedVocabulary": [\n' +
+      '    {"term": "واژه یا ترکیب کلیدی باردار", "usedBy": "نام رسانه یا قطب استفاده‌کننده", "connotation": "بار معنایی و هدف اقناعی آن"}\n' +
+      "  ]\n" +
+      "}\n" +
+      "تمامی توضیحات را به فارسی روان، دقیق و بی‌طرفانه بنویس.";
+
+    const user = `عنوان خوشه: ${String(clusterTitle).slice(0, 250)}\n\nگزارش‌های رسانه‌ها:\n${clampText(formatted, 5500)}`;
+
+    const reply = await aiChat(
+      [{ role: "system", content: sys }, { role: "user", content: user }],
+      { maxTokens: 2200, temperature: 0.3, userId: studioUser(c) },
+    );
+
+    const parsed = extractJson(reply);
+    return c.json({
+      divergence: {
+        summary: String(parsed.summary || "").trim(),
+        agreedFacts: Array.isArray(parsed.agreedFacts)
+          ? parsed.agreedFacts.map((x: any) => String(x).trim()).filter(Boolean).slice(0, 6)
+          : [],
+        framingDifferences: Array.isArray(parsed.framingDifferences)
+          ? parsed.framingDifferences.slice(0, 4).map((f: any) => ({
+              side: String(f?.side || "قطب رسانه‌ای").trim(),
+              sources: Array.isArray(f?.sources) ? f.sources.map((s: any) => String(s)).slice(0, 6) : [],
+              framing: String(f?.framing || "").trim(),
+              tone: String(f?.tone || "").trim(),
+            }))
+          : [],
+        loadedVocabulary: Array.isArray(parsed.loadedVocabulary)
+          ? parsed.loadedVocabulary.slice(0, 8).map((v: any) => ({
+              term: String(v?.term || "").trim(),
+              usedBy: String(v?.usedBy || "").trim(),
+              connotation: String(v?.connotation || "").trim(),
+            }))
+          : [],
+      },
+    });
+  } catch (e) {
+    return c.json({ fallback: true, error: String(e) }, 200);
+  }
+});
+
+// One-Click Graph Situation Brief — executive one-page summary of the current media graph
+app.post(`${BASE}/ai/graph-brief`, async (c) => {
+  try {
+    const body = await c.req.json();
+    const {
+      stats = {},
+      topClusters = [],
+      topBridges = [],
+      topLeaders = [],
+      syndicationCount = 0,
+      blindspotSummary = "",
+      emergingSignals = [],
+    } = body || {};
+
+    const clustersText = (Array.isArray(topClusters) ? topClusters : [])
+      .slice(0, 6)
+      .map(
+        (cl: any, i: number) =>
+          `${i + 1}. «${String(cl.title || "").slice(0, 180)}» (منشأ: ${cl.origin || "—"} | تعداد منابع: ${cl.size || 0} | سرعت: ${cl.velocity || "—"})`,
+      )
+      .join("\n");
+
+    const bridgesText = (Array.isArray(topBridges) ? topBridges : [])
+      .slice(0, 5)
+      .map((b: any) => `${b.name} (امتیاز پل ارتباطی: ${b.score})`)
+      .join("، ");
+
+    const leadersText = (Array.isArray(topLeaders) ? topLeaders : [])
+      .slice(0, 5)
+      .map((l: any) => `${l.name} (${l.leadLag})`)
+      .join("، ");
+
+    const signalsText = (Array.isArray(emergingSignals) ? emergingSignals : [])
+      .slice(0, 6)
+      .join(" | ");
+
+    const sys =
+      "تو تحلیلگر ارشد اتاق وضعیت رسانه هستی. بر اساس توپولوژی فعلی گراف رسانه، یک گزارش مدیریتی یک‌صفحه‌ای و ساختاریافته به فارسی تولید کن. " +
+      "فقط یک شیء JSON معتبر برگردان با ساختار دقیق زیر:\n" +
+      "{\n" +
+      '  "headline": "تیتر مدیریتی گزارش وضعیت گراف",\n' +
+      '  "executiveSummary": "یک پاراگراف تحلیلی از آرایش کلی فضای رسانه‌ای در ساعت اخیر",\n' +
+      '  "dominantClusters": [\n' +
+      '    {"title": "عنوان خوشه", "origin": "منبع اولیه", "reach": 0, "analysis": "تحلیل چرایی اهمیت و جهت‌گیری این خوشه"}\n' +
+      "  ],\n" +
+      '  "keyInfluencersAndBridges": [\n' +
+      '    {"name": "نام رسانه", "role": "نقش در شبکه (پیشتاز / پل ارتباطی / جریان‌ساز)", "insight": "توضیح نقش این رسانه در انتقال یا شکل‌دهی خبر"}\n' +
+      "  ],\n" +
+      '  "emergingWeakSignals": ["سیگنال نوظهور ۱", "سیگنال نوظهور ۲", "سیگنال نوظهور ۳"],\n' +
+      '  "blindspotAlert": "تحلیل شکاف پوششی و نقاط کور بین رسانه‌های داخلی و بین‌المللی"\n' +
+      "}";
+
+    const user =
+      `آمار شبکه: ${stats.articles || 0} مقاله، ${stats.clusters || 0} خوشه، ${stats.sources || 0} رسانه فعال، ${syndicationCount} شبکه بازنشر هم‌زمان.\n` +
+      `خوشه‌های غالب:\n${clustersText || "—"}\n\n` +
+      `پل‌های ارتباطی (Betweenness): ${bridgesText || "—"}\n` +
+      `رسانه‌های پیشتاز زمانی (Lead-Lag): ${leadersText || "—"}\n` +
+      `وضعیت نقاط کور: ${blindspotSummary || "—"}\n` +
+      `سیگنال‌های نوظهور: ${signalsText || "—"}`;
+
+    const reply = await aiChat(
+      [{ role: "system", content: sys }, { role: "user", content: user }],
+      { maxTokens: 2200, temperature: 0.35, userId: studioUser(c) },
+    );
+
+    const parsed = extractJson(reply);
+    return c.json({
+      brief: {
+        headline: String(parsed.headline || "گزارش تحلیلی وضعیت گراف رسانه").trim(),
+        executiveSummary: String(parsed.executiveSummary || "").trim(),
+        dominantClusters: Array.isArray(parsed.dominantClusters)
+          ? parsed.dominantClusters.slice(0, 3).map((d: any) => ({
+              title: String(d?.title || "").trim(),
+              origin: String(d?.origin || "").trim(),
+              reach: Number(d?.reach || 0),
+              analysis: String(d?.analysis || "").trim(),
+            }))
+          : [],
+        keyInfluencersAndBridges: Array.isArray(parsed.keyInfluencersAndBridges)
+          ? parsed.keyInfluencersAndBridges.slice(0, 5).map((k: any) => ({
+              name: String(k?.name || "").trim(),
+              role: String(k?.role || "").trim(),
+              insight: String(k?.insight || "").trim(),
+            }))
+          : [],
+        emergingWeakSignals: Array.isArray(parsed.emergingWeakSignals)
+          ? parsed.emergingWeakSignals.map((s: any) => String(s).trim()).filter(Boolean).slice(0, 5)
+          : [],
+        blindspotAlert: String(parsed.blindspotAlert || "").trim(),
+        generatedAt: Date.now(),
+      },
+    });
+  } catch (e) {
+    return c.json({ fallback: true, error: String(e) }, 200);
   }
 });
 
@@ -2201,16 +2364,12 @@ const PRIORITY_URLS = new Set<string>([
   "https://moxie.foxnews.com/google-publisher/latest.xml",
   "https://www.latimes.com/world-nation/rss2.0.xml",
   "https://feeds.nbcnews.com/feeds/topstories",
-  "https://feeds.npr.org/1001/rss.xml",
   "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
-  "https://www.pbs.org/newshour/feeds/rss/headlines",
   "https://rss.politico.com/politics-news.xml",
   "https://thehill.com/feed/",
   "https://rss.upi.com/news/news.rss",
   "https://feeds.content.dowjones.io/public/rss/RSSWorldNews",
-  "https://feeds.washingtonpost.com/rss/world",
   "https://www.euronews.com/rss",
-  "https://www.france24.com/en/rss",
   "https://www.lemonde.fr/en/rss/une.xml",
   "https://www.spiegel.de/international/index.rss",
   "https://rss.dw.com/xml/rss-en-all",
@@ -2294,25 +2453,52 @@ const DEFAULT_BOOTSTRAP_FEEDS = [
   { name: "Middle East Eye", url: "https://www.middleeasteye.net/rss", category: "بین‌الملل · خاورمیانه · رسانه دیجیتال", icon: "🌍" },
 ];
 
-async function fetchAndParseFeed(url: string, feedId: string, timeoutMs = 6000) {
+async function fetchFeedXmlRaw(url: string, timeoutMs: number): Promise<string> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-  let res: Response;
   try {
-    res = await fetch(url, {
+    const res = await fetch(url, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept": "application/rss+xml, application/atom+xml, application/rdf+xml, application/xml, text/xml, */*;q=0.8",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+        "Accept": "application/rss+xml, application/atom+xml, application/rdf+xml, application/xml, text/xml, */*;q=0.9",
+        "Accept-Language": "en-US,en;q=0.9,fa;q=0.8",
       },
       signal: ctrl.signal,
       redirect: "follow",
     });
+    if (!res.ok) throw new Error(`fetch failed ${res.status}`);
+    const xml = await res.text();
+    if (!xml || !xml.trim()) throw new Error("empty feed response");
+    return xml;
   } finally {
     clearTimeout(timer);
   }
-  if (!res.ok) throw new Error(`fetch failed ${res.status}`);
-  const xml = await res.text();
-  return parseFeedXml(xml, url, feedId);
+}
+
+async function fetchAndParseFeed(url: string, feedId: string, timeoutMs = 6000) {
+  let primaryErr: unknown = null;
+  try {
+    const xml = await fetchFeedXmlRaw(url, Math.min(timeoutMs, 3800));
+    const items = parseFeedXml(xml, url, feedId);
+    if (items.length > 0) return items;
+    primaryErr = new Error("empty feed items");
+  } catch (e) {
+    primaryErr = e;
+  }
+
+  // Automatic fallback via Google News RSS when a publisher feed blocks datacenter IPs (403/202) or times out
+  const fallbacks = buildGoogleNewsFallbackUrls(url);
+  for (const fbUrl of fallbacks) {
+    try {
+      const fbXml = await fetchFeedXmlRaw(fbUrl, 3500);
+      const fbItems = parseFeedXml(fbXml, url, feedId);
+      if (fbItems.length > 0) return fbItems;
+    } catch {
+      // try next fallback candidate
+    }
+  }
+
+  throw primaryErr instanceof Error ? primaryErr : new Error(String(primaryErr || "feed fetch failed"));
 }
 
 app.get(`${BASE}/feeds`, async (c) => {
@@ -2553,7 +2739,7 @@ app.get(`${BASE}/articles`, async (c) => {
         ? 6
         : MAX_LIVE_PER_REQUEST;
   const refreshTargets = [...pool]
-    .filter((f: any) => !isTripped(f.id))
+    .filter((f: any) => Boolean(feedIdParam) || !isTripped(f.id))
     .sort((a: any, b: any) => {
       const aOk = status[a.id]?.lastOk || 0;
       const bOk = status[b.id]?.lastOk || 0;
@@ -2596,7 +2782,6 @@ app.get(`${BASE}/articles`, async (c) => {
         }
       } catch (e) {
         const msg = String(e).slice(0, 200);
-        console.log(`feed ${feed.url} failed:`, msg);
         const prev = status[feed.id] || {};
         status[feed.id] = { ok: false, error: msg, lastOk: prev.lastOk, lastFail: Date.now() };
       }
@@ -2883,8 +3068,8 @@ app.get(`${BASE}/search`, async (c) => {
           });
           if (results.length >= 200) break;
         }
-      } catch (e) {
-        console.log(`search fetch ${feed.url} failed:`, String(e).slice(0, 100));
+      } catch {
+        // skip unreachable feed during live search
       }
     }
   }
