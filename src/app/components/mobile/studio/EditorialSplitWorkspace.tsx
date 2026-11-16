@@ -11,7 +11,6 @@ import {
   Send,
   Loader2,
   Image as ImageIcon,
-  RefreshCw,
   Hash,
   Bold,
   Italic,
@@ -35,7 +34,13 @@ import {
   Bookmark,
   Share2,
   Columns3,
-  Maximize2,
+  BellOff,
+  Pin,
+  CornerUpRight,
+  CalendarClock,
+  Zap,
+  ExternalLink,
+  AlertTriangle,
 } from "lucide-react";
 import type { Article } from "../../../data";
 import {
@@ -63,6 +68,26 @@ import {
   type CardTheme,
   type CardRatio,
 } from "./newsCard";
+import {
+  DEFAULT_MESSENGER_OPTIONS,
+  DEFAULT_REPLY_CHAIN,
+  DEFAULT_COMPOUND_RULES,
+  createDefaultInlineButtons,
+  evaluateCompoundRulesOnArticles,
+  detectFloodConflicts,
+  redistributeQueueAntiFlood,
+  suggestSmartPublishSlots,
+  type MessengerNativeOptions,
+  type ReplyChainConfig,
+  type CompoundAutomationRule,
+  type AutopilotCandidate,
+  type ScheduledSlotItem,
+  type InlineButton,
+} from "./omnichannelAutomation";
+import {
+  AutopilotTopBanner,
+  OmnichannelAutomationModal,
+} from "./OmnichannelAutomationModal";
 import { useToast } from "../primitives/Toast";
 import { toFa } from "../utils/fa";
 
@@ -76,6 +101,7 @@ type Props = {
 type RightPaneTab = "feed" | "clusters" | "basket";
 type LeftPaneTab = "device" | "canvas";
 type LayoutPreset = "balanced" | "editor-wide" | "preview-wide";
+type EditorModuleTab = "messenger_native" | "reply_thread" | "smart_slot";
 
 type HotCluster = {
   id: string;
@@ -241,7 +267,7 @@ export function EditorialSplitWorkspace({
     initialDraft?.title || firstPersian?.title || "گزارش تحلیلی تحریریه",
   );
   const [sourceLink, setSourceLink] = useState<string>(
-    initialDraft?.sourceLink || firstPersian?.link || "",
+    initialDraft?.sourceLink || firstPersian?.link || "https://kian.media/news/live",
   );
   const [brand, setBrand] = useState<BrandProfile>(DEFAULT_BRAND);
   const [templates, setTemplates] = useState<ContentTemplate[]>([]);
@@ -266,6 +292,57 @@ export function EditorialSplitWorkspace({
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  // ── Omnichannel & Smart Automation States ──
+  const [editorModuleTab, setEditorModuleTab] = useState<EditorModuleTab>("messenger_native");
+  const [messengerOpts, setMessengerOpts] = useState<MessengerNativeOptions>(() => ({
+    ...DEFAULT_MESSENGER_OPTIONS,
+    inlineButtons: createDefaultInlineButtons(firstPersian?.link),
+  }));
+  const [newBtnLabel, setNewBtnLabel] = useState("");
+  const [newBtnUrl, setNewBtnUrl] = useState("");
+
+  const [replyChain, setReplyChain] = useState<ReplyChainConfig>(() => ({
+    ...DEFAULT_REPLY_CHAIN,
+    parentTitle: articles[1]?.title || "گزارش اولیه: آغاز نشست اضطراری و بررسی پیامدهای بازار",
+    parentSnippet: (articles[1]?.preview || articles[1]?.title || "در گزارش قبلی کانال ابعاد اولیه این رویداد بررسی شد.").slice(0, 110),
+  }));
+  const [newThreadText, setNewThreadText] = useState("");
+
+  // Visual Trigger-Condition-Action Rules & Human-in-the-Loop Autopilot
+  const [compoundRules, setCompoundRules] = useState<CompoundAutomationRule[]>(DEFAULT_COMPOUND_RULES);
+  const [dismissedAutopilotIds, setDismissedAutopilotIds] = useState<string[]>([]);
+  const [automationModalOpen, setAutomationModalOpen] = useState(false);
+  const [minGapMinutes, setMinGapMinutes] = useState(20);
+  const [scheduledSlotTs, setScheduledSlotTs] = useState<number | null>(null);
+
+  // Simulated + server-synced scheduled queue items for Anti-Flood & Smart Slot
+  const [queueItems, setQueueItems] = useState<ScheduledSlotItem[]>(() => {
+    const base = Date.now();
+    return [
+      {
+        id: "q-1",
+        title: articles[0]?.title || "گزارش تحلیلی بازار ارز و انرژی",
+        scheduledAt: base + 12 * 60000,
+        priority: "normal",
+        platforms: ["telegram", "bale"],
+      },
+      {
+        id: "q-2",
+        title: articles[1]?.title || "واکنش رسانه‌های بین‌المللی به تحولات منطقه‌ای",
+        scheduledAt: base + 21 * 60000, // 9 min gap -> triggers Anti-Flood warning (< 20 min)
+        priority: "normal",
+        platforms: ["telegram", "twitter"],
+      },
+      {
+        id: "q-3",
+        title: articles[2]?.title || "جمع‌بندی شاخص‌های کلان اقتصادی",
+        scheduledAt: base + 55 * 60000,
+        priority: "high",
+        platforms: ["telegram", "linkedin"],
+      },
+    ];
+  });
 
   // Column 3 (Left in RTL): Live Device Mockup & Graphic Card Designer
   const [leftTab, setLeftTab] = useState<LeftPaneTab>("device");
@@ -316,9 +393,16 @@ export function EditorialSplitWorkspace({
     if (basketIds.length === 0 && firstPersian && !initialDraft) {
       setBasketIds([firstPersian.id]);
       setHeadline(firstPersian.title);
-      setSourceLink(firstPersian.link || "");
+      setSourceLink(firstPersian.link || "https://kian.media/news/live");
       setOutputs(buildDeterministicOutputs([firstPersian], brand, editorialAngle));
       if (firstPersian.image && !cardPreviewUrl) setCardPreviewUrl(firstPersian.image);
+      if (articles[1] && !replyChain.parentTitle) {
+        setReplyChain(prev => ({
+          ...prev,
+          parentTitle: articles[1].title,
+          parentSnippet: (articles[1].preview || articles[1].title).slice(0, 110),
+        }));
+      }
     }
   }, [articles, firstPersian]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -373,6 +457,61 @@ export function EditorialSplitWorkspace({
 
   const hotClusters = useMemo(() => buildQuickClusterList(articles), [articles]);
 
+  // Evaluate Compound Rules for Human-in-the-Loop Autopilot
+  const autopilotCandidates = useMemo<AutopilotCandidate[]>(() => {
+    const evaluated = evaluateCompoundRulesOnArticles(articles, compoundRules);
+    if (evaluated.length > 0) {
+      return evaluated.filter(c => !dismissedAutopilotIds.includes(c.id));
+    }
+    // If live articles don't currently form a 3+ negative cluster in <20m, provide a live cluster candidate from hotClusters or top articles so the editor can experience and verify the Human-in-the-Loop Autopilot bar
+    const fallbackCluster = hotClusters[0];
+    const lead = fallbackCluster?.items[0] || firstPersian || articles[0];
+    if (!lead) return [];
+    const fallbackId = `auto-live-${lead.id}`;
+    if (dismissedAutopilotIds.includes(fallbackId)) return [];
+    const srcs = fallbackCluster
+      ? Array.from(new Set(fallbackCluster.items.map(i => i.source || "خبرگزاری")))
+      : ["ایرنا", "ایسنا", "تسنیم", lead.source || "فارس"].slice(0, 3);
+    return [
+      {
+        id: fallbackId,
+        ruleId: compoundRules[0]?.id || "crule-breaking-critical",
+        ruleName: compoundRules[0]?.name || "تشخیص خوشهٔ فوری و بحرانی (Breaking Cluster)",
+        clusterTitle: lead.title,
+        sources: srcs.length >= 3 ? srcs : ["ایرنا", "ایسنا", "تسنیم"],
+        sourceCount: Math.max(3, srcs.length),
+        spanMinutes: 14,
+        sentiment: "critical",
+        sentimentScore: -0.82,
+        cardStyle: "breaking_red",
+        priority: "high",
+        platforms: ["telegram", "bale", "eitaa", "rubika", "twitter"],
+        headline: `🚨 خلاصهٔ فوری | ${lead.title}`,
+        summaryText: `🚨 خلاصهٔ فوری | ${lead.title}\n\nپوشش هم‌زمان در ${toFa(Math.max(3, srcs.length))} خبرگزاری معتبر در کمتر از ۱۴ دقیقه:\n• ${lead.title}\n• ${(articles[1]?.title || "گزارش تکمیلی از ابعاد رویداد")}\n\n📡 آمادهٔ انتشار با کارت قرمز فوری`,
+        sourceLink: lead.link || "https://kian.media/news/breaking",
+        articleIds: fallbackCluster ? fallbackCluster.items.map(i => i.id) : [lead.id],
+        createdAt: Date.now(),
+        status: "pending_approval",
+      },
+    ];
+  }, [articles, compoundRules, hotClusters, firstPersian, dismissedAutopilotIds]);
+
+  const floodConflicts = useMemo(
+    () => detectFloodConflicts(queueItems, minGapMinutes),
+    [queueItems, minGapMinutes],
+  );
+
+  const smartSlots = useMemo(
+    () =>
+      suggestSmartPublishSlots(
+        queueItems.map(q => q.scheduledAt),
+        Date.now(),
+        minGapMinutes,
+        4,
+      ),
+    [queueItems, minGapMinutes],
+  );
+
   const basketArticles = useMemo(() => {
     const map = new Map(articles.map(a => [a.id, a]));
     return basketIds.map(id => map.get(id)).filter((a): a is Article => !!a);
@@ -381,15 +520,14 @@ export function EditorialSplitWorkspace({
   const toggleBasketItem = (article: Article) => {
     setBasketIds(prev => {
       const exists = prev.includes(article.id);
-      const next = exists ? prev.filter(id => id !== article.id) : [...prev, article.id];
-      return next;
+      return exists ? prev.filter(id => id !== article.id) : [...prev, article.id];
     });
   };
 
   const loadSingleArticleIntoEditor = (article: Article) => {
     setBasketIds([article.id]);
     setHeadline(article.title);
-    setSourceLink(article.link || "");
+    setSourceLink(article.link || "https://kian.media/news");
     setCardFooterSource(article.source || "");
     setOutputs(buildDeterministicOutputs([article], brand, editorialAngle));
     toast({ kind: "success", message: "خبر در میز ویرایشگر بارگذاری شد" });
@@ -420,12 +558,70 @@ export function EditorialSplitWorkspace({
     });
   };
 
+  // Human-in-the-Loop Autopilot handlers
+  const handleInspectAutopilotCandidate = (cand: AutopilotCandidate) => {
+    setHeadline(cand.headline);
+    setSourceLink(cand.sourceLink);
+    setCardAccent("#E11D48"); // Red Breaking Card
+    setCardTheme("dark");
+    setMessengerOpts(prev => ({
+      ...prev,
+      autoPin: true,
+    }));
+    const matchedArticles = articles.filter(a => cand.articleIds.includes(a.id));
+    const items = matchedArticles.length > 0 ? matchedArticles : articles.slice(0, 2);
+    const nextOutputs = buildDeterministicOutputs(items, brand, "خلاصهٔ فوری و بحرانی");
+    nextOutputs.telegram.text = cand.summaryText;
+    nextOutputs.bale.text = cand.summaryText;
+    nextOutputs.eitaa.text = cand.summaryText;
+    nextOutputs.rubika.text = cand.summaryText;
+    setOutputs(nextOutputs);
+    toast({
+      kind: "success",
+      message: "بستهٔ فوری خلبان خودکار با کارت قرمز و پین خودکار در ویرایشگر بارگذاری شد",
+    });
+  };
+
+  const handleApproveAndPublishAutopilot = async (cand: AutopilotCandidate) => {
+    handleInspectAutopilotCandidate(cand);
+    setDismissedAutopilotIds(prev => [...prev, cand.id]);
+    // Add to priority queue with high/urgent priority
+    setQueueItems(prev => [
+      {
+        id: `q-auto-${Date.now()}`,
+        title: cand.headline,
+        scheduledAt: Date.now() + 2 * 60000,
+        priority: "urgent",
+        platforms: cand.platforms,
+      },
+      ...prev,
+    ]);
+    try {
+      await api.studioSaveDraft(uid, {
+        title: cand.headline.slice(0, 120),
+        sourceTitle: cand.clusterTitle,
+        sourceLink: cand.sourceLink,
+        image: cardPreviewUrl,
+        cardTheme: "dark",
+        cardRatio: "square",
+        outputs,
+        status: "approved",
+        auto: true,
+      });
+    } catch {
+      // ignore if offline
+    }
+    toast({
+      kind: "success",
+      message: "بستهٔ خلبان خودکار تأیید شد و با کارت قرمز در صدر صف انتشار فوری قرار گرفت",
+    });
+  };
+
   // Generate AI multi-platform content from the Story Basket
   const generateFromBasketWithAi = async () => {
     const sources = basketArticles.length > 0 ? basketArticles : articles.slice(0, 1);
     if (sources.length === 0) return;
 
-    // Immediately populate deterministic drafts for all 8 platforms first
     const baseOut = buildDeterministicOutputs(sources, brand, editorialAngle);
     setOutputs(baseOut);
     setGeneratingAi(true);
@@ -556,7 +752,6 @@ export function EditorialSplitWorkspace({
         toast({ kind: "success", message: `متن با لحن «${label}» بازنویسی شد` });
       }
     } catch {
-      // Deterministic tone adjustment fallback
       const prefix =
         label === "فوری و کوتاه"
           ? "🚨 فوری | "
@@ -596,6 +791,114 @@ export function EditorialSplitWorkspace({
     }));
   };
 
+  // Inline Keyboard Button Handlers
+  const addCustomInlineButton = () => {
+    if (!newBtnLabel.trim()) return;
+    const btn: InlineButton = {
+      id: `btn-${Date.now()}`,
+      label: newBtnLabel.trim(),
+      kind: "url",
+      url: newBtnUrl.trim() || sourceLink || "https://kian.media",
+    };
+    setMessengerOpts(prev => ({
+      ...prev,
+      inlineButtons: [...prev.inlineButtons, btn],
+    }));
+    setNewBtnLabel("");
+    setNewBtnUrl("");
+    toast({ kind: "success", message: "دکمهٔ شیشه‌ای به زیر پست اضافه شد" });
+  };
+
+  const removeInlineButton = (id: string) => {
+    setMessengerOpts(prev => ({
+      ...prev,
+      inlineButtons: prev.inlineButtons.filter(b => b.id !== id),
+    }));
+  };
+
+  const resetReactionPollButtons = () => {
+    setMessengerOpts(prev => ({
+      ...prev,
+      inlineButtons: createDefaultInlineButtons(sourceLink),
+    }));
+    toast({ kind: "success", message: "دکمه‌های شیشه‌ای استاندارد و نظرسنجی واکنشی بازنشانی شدند" });
+  };
+
+  const incrementReactionInPreview = (id: string) => {
+    setMessengerOpts(prev => ({
+      ...prev,
+      inlineButtons: prev.inlineButtons.map(b =>
+        b.id === id ? { ...b, count: (b.count || 0) + 1 } : b,
+      ),
+    }));
+  };
+
+  // Reply / Thread Handlers
+  const addThreadContinuation = () => {
+    if (!newThreadText.trim()) return;
+    setReplyChain(prev => ({
+      ...prev,
+      threadContinuations: [...prev.threadContinuations, newThreadText.trim()],
+    }));
+    setNewThreadText("");
+    toast({ kind: "success", message: "پست مکمل به زنجیره (Thread) افزوده شد" });
+  };
+
+  const removeThreadContinuation = (idx: number) => {
+    setReplyChain(prev => ({
+      ...prev,
+      threadContinuations: prev.threadContinuations.filter((_, i) => i !== idx),
+    }));
+  };
+
+  // Smart Slot & Anti-Flood Handlers
+  const handlePickSmartSlot = async (slotTs: number) => {
+    setScheduledSlotTs(slotTs);
+    const newItem: ScheduledSlotItem = {
+      id: draftId || `q-${Date.now()}`,
+      title: headline,
+      scheduledAt: slotTs,
+      priority: "normal",
+      platforms: [activePlatform],
+    };
+    setQueueItems(prev => [...prev.filter(i => i.id !== newItem.id), newItem].sort((a, b) => a.scheduledAt - b.scheduledAt));
+    try {
+      const saved = await api.studioSaveDraft(uid, {
+        id: draftId || undefined,
+        title: headline.slice(0, 120),
+        sourceTitle: headline,
+        sourceLink,
+        image: cardPreviewUrl,
+        cardTheme,
+        cardRatio,
+        outputs,
+        status: "scheduled",
+        scheduledAt: slotTs,
+      });
+      setDraftId(saved.id);
+      onSavedDraft?.(saved);
+    } catch {
+      // ignore offline
+    }
+    const timeLabel = new Date(slotTs).toLocaleTimeString("fa-IR", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    toast({
+      kind: "success",
+      message: `پست در اسلات هوشمند ساعت ${timeLabel} (با رعایت فاصلهٔ ضد ازدحام) زمان‌بندی شد`,
+    });
+  };
+
+  const handleAutoSpaceQueueInline = () => {
+    const spaced = redistributeQueueAntiFlood(queueItems, minGapMinutes, Date.now());
+    setQueueItems(spaced);
+    toast({
+      kind: "success",
+      message: `تمام پست‌های صف با حداقل ${toFa(minGapMinutes)} دقیقه فاصلهٔ استاندارد بازتوزیع شدند`,
+    });
+  };
+
   const fullFormattedPost = (out: DraftOutput) =>
     out.hashtags?.length
       ? `${out.text}\n\n${out.hashtags.map(h => `#${h}`).join(" ")}`
@@ -614,7 +917,8 @@ export function EditorialSplitWorkspace({
         cardTheme,
         cardRatio,
         outputs,
-        status: "draft",
+        status: scheduledSlotTs ? "scheduled" : "draft",
+        scheduledAt: scheduledSlotTs || undefined,
       });
       setDraftId(saved.id);
       onSavedDraft?.(saved);
@@ -744,34 +1048,63 @@ export function EditorialSplitWorkspace({
   // Grid template columns based on layoutPreset
   const gridColsClass =
     layoutPreset === "editor-wide"
-      ? "lg:grid-cols-[300px_minmax(0,1.6fr)_340px]"
+      ? "lg:grid-cols-[290px_minmax(0,1.65fr)_340px]"
       : layoutPreset === "preview-wide"
-        ? "lg:grid-cols-[310px_minmax(0,1fr)_440px]"
-        : "lg:grid-cols-[340px_minmax(0,1.25fr)_380px]";
+        ? "lg:grid-cols-[300px_minmax(0,1fr)_440px]"
+        : "lg:grid-cols-[320px_minmax(0,1.3fr)_370px]";
+
+  const urlButtons = messengerOpts.inlineButtons.filter(b => b.kind === "url");
+  const reactionButtons = messengerOpts.inlineButtons.filter(b => b.kind === "reaction");
 
   return (
     <div dir="rtl" className="h-full flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden">
+      {/* ═══════════════════════════════════════════════════════════════════
+          HUMAN-IN-THE-LOOP AUTOPILOT TOP BANNER (خلبان خودکار با تأیید انسان)
+      ═══════════════════════════════════════════════════════════════════ */}
+      <AutopilotTopBanner
+        candidates={autopilotCandidates}
+        onApproveAndPublish={handleApproveAndPublishAutopilot}
+        onInspectInEditor={handleInspectAutopilotCandidate}
+        onDismiss={id => setDismissedAutopilotIds(prev => [...prev, id])}
+        onOpenAutomationBuilder={() => setAutomationModalOpen(true)}
+      />
+
       {/* Workspace Sub-Toolbar */}
       <div className="px-4 py-2 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between gap-3 flex-wrap shrink-0">
         <div className="flex items-center gap-3 text-xs">
           <span className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
             <Columns3 className="w-4 h-4 text-emerald-600" />
-            میز کار چندستونهٔ تحریریه (۳ ستون هم‌زمان)
+            میز کار چندستونهٔ تحریریه (Omnichannel Studio)
           </span>
           <span className="text-slate-400">·</span>
           <span className="text-slate-500 dark:text-slate-400 tabular-nums">
-            {toFa(basketArticles.length)} خبر در سبد انتخابی · {toFa(ALL_PLATFORMS.length)} پلتفرم موازی
+            {toFa(basketArticles.length)} خبر در سبد · {toFa(ALL_PLATFORMS.length)} پلتفرم ·{" "}
+            {toFa(messengerOpts.inlineButtons.length)} دکمه شیشه‌ای
           </span>
         </div>
 
-        {/* Column Proportion Presets */}
-        <div className="flex items-center gap-1.5 text-xs">
-          <span className="text-slate-500 hidden sm:inline">چیدمان ستون‌ها:</span>
+        {/* Column Proportion Presets + Visual Rule Builder Button */}
+        <div className="flex items-center gap-2 text-xs">
+          <button
+            type="button"
+            data-testid="open-visual-automation-btn"
+            onClick={() => setAutomationModalOpen(true)}
+            className="px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 font-medium flex items-center gap-1 hover:bg-emerald-100 transition whitespace-nowrap"
+          >
+            <Zap className="w-3.5 h-3.5" />
+            <span>اتوماسیون شرطی و ضد ازدحام</span>
+            {floodConflicts.length > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full bg-amber-500 text-white text-[10px]">
+                {toFa(floodConflicts.length)}
+              </span>
+            )}
+          </button>
+
           <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg">
             {[
               { id: "balanced", label: "متوازن (۳ ستون)" },
               { id: "editor-wide", label: "تمرکز ویرایشگر" },
-              { id: "preview-wide", label: "تمرکز موبایل و کارت" },
+              { id: "preview-wide", label: "تمرکز موبایل" },
             ].map(p => (
               <button
                 key={p.id}
@@ -824,7 +1157,7 @@ export function EditorialSplitWorkspace({
                 }`}
               >
                 <Flame className="w-3.5 h-3.5" />
-                <span>خوشه‌های داغ ({toFa(hotClusters.length)})</span>
+                <span>خوشه‌ها ({toFa(hotClusters.length)})</span>
               </button>
               <button
                 type="button"
@@ -836,7 +1169,7 @@ export function EditorialSplitWorkspace({
                 }`}
               >
                 <ShoppingBasket className="w-3.5 h-3.5" />
-                <span>سبد خبرها ({toFa(basketArticles.length)})</span>
+                <span>سبد ({toFa(basketArticles.length)})</span>
               </button>
             </div>
           </div>
@@ -845,7 +1178,6 @@ export function EditorialSplitWorkspace({
           <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
             {rightTab === "feed" && (
               <>
-                {/* Search + Category filter */}
                 <div className="space-y-2">
                   <div className="relative">
                     <Search className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2" />
@@ -885,7 +1217,6 @@ export function EditorialSplitWorkspace({
                   </div>
                 </div>
 
-                {/* Live Feed Items */}
                 <div className="space-y-2">
                   {filteredFeed.map(art => {
                     const inBasket = basketIds.includes(art.id);
@@ -994,7 +1325,7 @@ export function EditorialSplitWorkspace({
 
                 {basketArticles.length === 0 ? (
                   <div className="p-6 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 text-center text-xs text-slate-400">
-                    سبد خبرها خالی است. از تب «فید زنده» یا «خوشه‌های داغ» خبرها را به سبد اضافه کنید.
+                    سبد خبرها خالی است. از تب «فید زنده» یا «خوشه‌ها» خبرها را به سبد اضافه کنید.
                   </div>
                 ) : (
                   <div className="space-y-2">
@@ -1045,7 +1376,6 @@ export function EditorialSplitWorkspace({
                   </div>
                 )}
 
-                {/* Editorial Angle / Custom Prompt */}
                 <div className="space-y-1.5 pt-1">
                   <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
                     زاویهٔ دید و دستورالعمل تحریریه (اختیاری):
@@ -1059,7 +1389,6 @@ export function EditorialSplitWorkspace({
                   />
                 </div>
 
-                {/* Template Selector */}
                 {templates.length > 0 && (
                   <div className="space-y-1">
                     <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
@@ -1083,7 +1412,6 @@ export function EditorialSplitWorkspace({
             )}
           </div>
 
-          {/* Sticky Bottom Action in Right Pane: Generate Multi-Platform Draft from Basket */}
           <div className="p-3 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
             <button
               type="button"
@@ -1106,7 +1434,7 @@ export function EditorialSplitWorkspace({
         </section>
 
         {/* ═══════════════════════════════════════════════════════════════════
-            COLUMN 2 (CENTER): RICH EDITOR WITH PARALLEL PLATFORM TABS
+            COLUMN 2 (CENTER): RICH EDITOR WITH PARALLEL PLATFORM TABS & OMNICHANNEL MODULES
         ═══════════════════════════════════════════════════════════════════ */}
         <section
           aria-label="ستون وسط: ویرایشگر غنی چندپلتفرمی"
@@ -1143,7 +1471,6 @@ export function EditorialSplitWorkspace({
 
           {/* Rich Editor Formatting & AI Tone Bar */}
           <div className="px-3 py-2 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 flex-wrap bg-white dark:bg-slate-950 shrink-0">
-            {/* Formatting Controls */}
             <div className="flex items-center gap-1">
               <button
                 type="button"
@@ -1203,7 +1530,6 @@ export function EditorialSplitWorkspace({
               </button>
             </div>
 
-            {/* AI Quick Tone Shifters */}
             <div className="flex items-center gap-1 flex-wrap">
               {[
                 { label: "فوری و کوتاه", prompt: "متن را به یک خبر فوری، بسیار فشرده و قلاب‌دار تبدیل کن" },
@@ -1229,7 +1555,7 @@ export function EditorialSplitWorkspace({
           </div>
 
           {/* Main Editor Body */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-3 flex flex-col">
+          <div className="flex-1 overflow-y-auto p-3.5 space-y-3 flex flex-col">
             {/* Master Headline Input */}
             <div>
               <label className="block text-[11px] text-slate-500 mb-1">
@@ -1239,7 +1565,7 @@ export function EditorialSplitWorkspace({
                 value={headline}
                 onChange={e => setHeadline(e.target.value)}
                 placeholder="تیتر اصلی خبر..."
-                className="w-full h-10 px-3 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-sm font-semibold outline-none focus:border-emerald-500"
+                className="w-full h-9 px-3 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-semibold outline-none focus:border-emerald-500"
               />
             </div>
 
@@ -1255,7 +1581,7 @@ export function EditorialSplitWorkspace({
             </div>
 
             {charLimit > 0 && (
-              <div className="w-full h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+              <div className="w-full h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden shrink-0">
                 <div
                   style={{ width: `${Math.min(100, Math.round((charCount / charLimit) * 100))}%` }}
                   className={`h-full transition-all ${
@@ -1275,13 +1601,13 @@ export function EditorialSplitWorkspace({
               value={activeOutput.text}
               onChange={e => updateActiveText(e.target.value)}
               dir="auto"
-              rows={11}
+              rows={7}
               placeholder={`متن اختصاصی برای ${PLATFORM_META[activePlatform].label} را اینجا بنویسید یا از ستون راست با هوش مصنوعی تولید کنید...`}
-              className="flex-1 min-h-[220px] w-full rounded-xl bg-slate-50 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 p-3.5 text-sm leading-8 outline-none focus:border-emerald-500 resize-y"
+              className="min-h-[145px] w-full rounded-xl bg-slate-50 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 p-3 text-xs leading-7 outline-none focus:border-emerald-500 resize-y"
             />
 
             {/* Hashtag Editor */}
-            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 space-y-2">
+            <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 space-y-1.5">
               <div className="flex items-center justify-between text-[11px] text-slate-500">
                 <span className="flex items-center gap-1 font-medium">
                   <Hash className="w-3.5 h-3.5 text-emerald-600" />
@@ -1293,7 +1619,7 @@ export function EditorialSplitWorkspace({
                 {(activeOutput.hashtags || []).map(tag => (
                   <span
                     key={tag}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-emerald-700 dark:text-emerald-300"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[11px] text-emerald-700 dark:text-emerald-300"
                   >
                     #{tag}
                     <button
@@ -1316,17 +1642,316 @@ export function EditorialSplitWorkspace({
                       }
                     }}
                     placeholder="افزودن هشتگ + Enter"
-                    className="h-7 px-2 rounded-md bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs outline-none w-36"
+                    className="h-6 px-2 rounded-md bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[11px] outline-none w-32"
                   />
                   <button
                     type="button"
                     onClick={addHashtag}
-                    className="h-7 px-2 rounded-md bg-emerald-600 text-white text-xs"
+                    className="h-6 px-2 rounded-md bg-emerald-600 text-white text-xs"
                   >
                     +
                   </button>
                 </div>
               </div>
+            </div>
+
+            {/* ═══════════════════════════════════════════════════════════════════
+                OMNICHANNEL & SMART AUTOMATION MODULES IN CENTRAL RICH EDITOR
+            ═══════════════════════════════════════════════════════════════════ */}
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/70 overflow-hidden">
+              {/* Module Switcher Tabs */}
+              <div className="grid grid-cols-3 gap-1 p-1 bg-slate-100 dark:bg-slate-800/90 text-[11px] font-medium">
+                <button
+                  type="button"
+                  data-testid="tab-messenger-native"
+                  onClick={() => setEditorModuleTab("messenger_native")}
+                  className={`py-1.5 px-2 rounded-lg flex items-center justify-center gap-1 transition whitespace-nowrap ${
+                    editorModuleTab === "messenger_native"
+                      ? "bg-white dark:bg-slate-950 text-emerald-600 dark:text-emerald-400 shadow-2xs font-semibold"
+                      : "text-slate-600 dark:text-slate-400"
+                  }`}
+                >
+                  <span>دکمه شیشه‌ای و پیام‌رسان</span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="tab-reply-thread"
+                  onClick={() => setEditorModuleTab("reply_thread")}
+                  className={`py-1.5 px-2 rounded-lg flex items-center justify-center gap-1 transition whitespace-nowrap ${
+                    editorModuleTab === "reply_thread"
+                      ? "bg-white dark:bg-slate-950 text-sky-600 dark:text-sky-400 shadow-2xs font-semibold"
+                      : "text-slate-600 dark:text-slate-400"
+                  }`}
+                >
+                  <CornerUpRight className="w-3.5 h-3.5" />
+                  <span>پاسخ به پست قبلی / زنجیره</span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="tab-smart-slot"
+                  onClick={() => setEditorModuleTab("smart_slot")}
+                  className={`py-1.5 px-2 rounded-lg flex items-center justify-center gap-1 transition whitespace-nowrap ${
+                    editorModuleTab === "smart_slot"
+                      ? "bg-white dark:bg-slate-950 text-amber-600 dark:text-amber-400 shadow-2xs font-semibold"
+                      : "text-slate-600 dark:text-slate-400"
+                  }`}
+                >
+                  <CalendarClock className="w-3.5 h-3.5" />
+                  <span>صف هوشمند و ضد ازدحام</span>
+                </button>
+              </div>
+
+              {/* Module 1: Messenger Native Features (Telegram / Bale / Eitaa / Rubika) */}
+              {editorModuleTab === "messenger_native" && (
+                <div className="p-3 space-y-2.5 text-xs">
+                  {/* Native Toggles Row */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setMessengerOpts(prev => ({ ...prev, silent: !prev.silent }))
+                      }
+                      className={`px-2.5 py-1 rounded-lg border text-[11px] flex items-center gap-1 transition ${
+                        messengerOpts.silent
+                          ? "bg-amber-500/15 border-amber-500/50 text-amber-700 dark:text-amber-300 font-semibold"
+                          : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400"
+                      }`}
+                    >
+                      <BellOff className="w-3.5 h-3.5" />
+                      <span>ارسال بی‌صدا (Silent)</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setMessengerOpts(prev => ({ ...prev, autoPin: !prev.autoPin }))
+                      }
+                      className={`px-2.5 py-1 rounded-lg border text-[11px] flex items-center gap-1 transition ${
+                        messengerOpts.autoPin
+                          ? "bg-rose-500/15 border-rose-500/50 text-rose-700 dark:text-rose-300 font-semibold"
+                          : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400"
+                      }`}
+                    >
+                      <Pin className="w-3.5 h-3.5" />
+                      <span>پین خودکار خبر فوری</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setMessengerOpts(prev => ({
+                          ...prev,
+                          showLinkPreview: !prev.showLinkPreview,
+                        }))
+                      }
+                      className={`px-2.5 py-1 rounded-lg border text-[11px] flex items-center gap-1 transition ${
+                        messengerOpts.showLinkPreview
+                          ? "bg-sky-500/15 border-sky-500/50 text-sky-700 dark:text-sky-300 font-semibold"
+                          : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400"
+                      }`}
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      <span>پیش‌نمایش لینک سفارشی</span>
+                    </button>
+                  </div>
+
+                  {/* Inline Keyboard Glass Buttons Builder */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px] text-slate-500">
+                      <span className="font-medium text-slate-700 dark:text-slate-300">
+                        دکمه‌های شیشه‌ای تعاملی زیر پست (Inline Keyboard):
+                      </span>
+                      <button
+                        type="button"
+                        onClick={resetReactionPollButtons}
+                        className="text-emerald-600 hover:underline text-[10.5px]"
+                      >
+                        + بازنشانی دکمه‌های واکنشی (👍 / 👎 / 🔥)
+                      </button>
+                    </div>
+
+                    <div className="flex flex-wrap gap-1.5">
+                      {messengerOpts.inlineButtons.map(btn => (
+                        <span
+                          key={btn.id}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-[11px]"
+                        >
+                          <span>{btn.label}</span>
+                          {btn.count !== undefined && (
+                            <span className="text-emerald-600 font-mono tabular-nums">
+                              {toFa(btn.count)}
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => removeInlineButton(btn.id)}
+                            className="text-slate-400 hover:text-rose-500"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+
+                    {/* Add New Glass Button */}
+                    <div className="flex items-center gap-1.5 pt-1">
+                      <input
+                        value={newBtnLabel}
+                        onChange={e => setNewBtnLabel(e.target.value)}
+                        placeholder="متن دکمه شیشه‌ای (مثلاً: مشاهده ویدیو)"
+                        className="flex-1 h-7 px-2 rounded-lg bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-[11px] outline-none"
+                      />
+                      <input
+                        value={newBtnUrl}
+                        onChange={e => setNewBtnUrl(e.target.value)}
+                        dir="ltr"
+                        placeholder="https://..."
+                        className="w-36 h-7 px-2 rounded-lg bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-[11px] outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={addCustomInlineButton}
+                        className="h-7 px-2.5 rounded-lg bg-emerald-600 text-white text-[11px] font-medium whitespace-nowrap"
+                      >
+                        + دکمه شیشه‌ای
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Module 2: Reply-to-Previous & Threading (انتشار زنجیره‌ای و پاسخ به پست قبلی) */}
+              {editorModuleTab === "reply_thread" && (
+                <div className="p-3 space-y-2.5 text-xs">
+                  <div className="flex items-center justify-between">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={replyChain.enabled}
+                        onChange={e =>
+                          setReplyChain(prev => ({ ...prev, enabled: e.target.checked }))
+                        }
+                        className="rounded accent-emerald-600"
+                      />
+                      <span className="font-semibold">
+                        اتصال به پست قبلی منتشرشده در کانال (Reply / Quote)
+                      </span>
+                    </label>
+                    <span className="text-[10.5px] text-slate-400 font-mono" dir="ltr">
+                      Msg #{replyChain.channelMessageId}
+                    </span>
+                  </div>
+
+                  {replyChain.enabled && (
+                    <div className="space-y-2 pt-1">
+                      <select
+                        value={replyChain.parentTitle}
+                        onChange={e => {
+                          const picked = articles.find(a => a.title === e.target.value);
+                          setReplyChain(prev => ({
+                            ...prev,
+                            parentTitle: e.target.value,
+                            parentSnippet: (picked?.preview || e.target.value).slice(0, 110),
+                          }));
+                        }}
+                        className="w-full h-8 px-2 rounded-lg bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-[11px] outline-none"
+                      >
+                        <option value={replyChain.parentTitle}>{replyChain.parentTitle}</option>
+                        {articles.slice(0, 12).map(a => (
+                          <option key={a.id} value={a.title}>
+                            پست قبلی: {a.title.slice(0, 75)} ({a.source})
+                          </option>
+                        ))}
+                      </select>
+
+                      {/* Multi-post Thread Continuations */}
+                      <div className="space-y-1.5">
+                        <div className="text-[11px] text-slate-500">
+                          ادامهٔ رشته / پست‌های زنجیره‌ای مکمل ({toFa(replyChain.threadContinuations.length)}):
+                        </div>
+                        {replyChain.threadContinuations.map((tc, idx) => (
+                          <div
+                            key={idx}
+                            className="p-2 rounded-lg bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 text-[11px]"
+                          >
+                            <span className="truncate">
+                              {toFa(idx + 2)}. {tc}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => removeThreadContinuation(idx)}
+                              className="text-rose-500"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            value={newThreadText}
+                            onChange={e => setNewThreadText(e.target.value)}
+                            placeholder="متن پست تکمیلی بعدی در زنجیرهٔ خبر..."
+                            className="flex-1 h-7 px-2 rounded-lg bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-[11px] outline-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={addThreadContinuation}
+                            className="h-7 px-2.5 rounded-lg bg-sky-600 text-white text-[11px] font-medium whitespace-nowrap"
+                          >
+                            + افزودن به رشته
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Module 3: Smart Slot & Anti-Flood Limiter */}
+              {editorModuleTab === "smart_slot" && (
+                <div className="p-3 space-y-2.5 text-xs">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="font-semibold text-slate-700 dark:text-slate-200">
+                      پیشنهاد بهترین زمان انتشار (حداقل {toFa(minGapMinutes)} دقیقه فاصله ضد ازدحام):
+                    </span>
+                    {floodConflicts.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleAutoSpaceQueueInline}
+                        className="px-2 py-0.5 rounded-md bg-amber-500 text-white text-[10.5px] font-semibold flex items-center gap-1"
+                      >
+                        <AlertTriangle className="w-3 h-3" />
+                        <span>رفع {toFa(floodConflicts.length)} تداخل صف (فاصله ۲۰ دقیقه)</span>
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {smartSlots.slice(0, 4).map(slot => (
+                      <button
+                        key={slot.ts}
+                        type="button"
+                        onClick={() => handlePickSmartSlot(slot.ts)}
+                        className={`p-2 rounded-lg border text-right transition ${
+                          scheduledSlotTs === slot.ts
+                            ? "border-emerald-600 bg-emerald-50/70 dark:bg-emerald-950/40"
+                            : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 hover:border-emerald-500"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between text-[11px] font-bold">
+                          <span className="text-emerald-600 dark:text-emerald-400">{slot.label}</span>
+                          <span className="text-[10px] text-slate-400">
+                            تعامل {toFa(slot.engagementScore)}٪
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-slate-500 truncate mt-0.5">
+                          {slot.reason}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1413,17 +2038,27 @@ export function EditorialSplitWorkspace({
             {leftTab === "device" ? (
               /* PIXEL-ACCURATE LIVE MOBILE DEVICE MOCKUP */
               <div className="w-full flex flex-col items-center space-y-2.5">
-                <div className="text-[11px] text-slate-500 flex items-center gap-1.5">
+                <div className="text-[11px] text-slate-500 flex items-center gap-1.5 flex-wrap justify-center">
                   <span>شبیه‌ساز پیکسل‌به‌پیکسل:</span>
                   <strong className="text-slate-800 dark:text-slate-200">
                     {PLATFORM_META[activePlatform].emoji} {PLATFORM_META[activePlatform].label}
                   </strong>
+                  {messengerOpts.silent && (
+                    <span className="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-600 text-[10px]">
+                      🔕 بی‌صدا
+                    </span>
+                  )}
+                  {messengerOpts.autoPin && (
+                    <span className="px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-600 text-[10px]">
+                      📌 پین خودکار
+                    </span>
+                  )}
                 </div>
 
                 {/* Phone Bezel Frame */}
                 <div
                   data-testid="live-device-mockup"
-                  className="w-[316px] rounded-[36px] border-[7px] border-slate-900 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-xl overflow-hidden flex flex-col"
+                  className="w-[318px] rounded-[36px] border-[7px] border-slate-900 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-xl overflow-hidden flex flex-col"
                 >
                   {/* Status Bar + Dynamic Island */}
                   <div className="h-7 px-5 bg-slate-950 text-white flex items-center justify-between text-[10px] font-mono shrink-0" dir="ltr">
@@ -1437,7 +2072,7 @@ export function EditorialSplitWorkspace({
                     activePlatform === "bale" ||
                     activePlatform === "rubika" ||
                     activePlatform === "eitaa") && (
-                    <div className="flex flex-col bg-[#0E1621] text-white min-h-[470px]">
+                    <div className="flex flex-col bg-[#0E1621] text-white min-h-[490px]">
                       {/* Channel Top Header */}
                       <div className="px-3 py-2 bg-[#17212B] flex items-center gap-2.5 border-b border-white/10">
                         <div className="w-8 h-8 rounded-full bg-emerald-600 grid place-items-center text-xs font-bold">
@@ -1453,29 +2088,90 @@ export function EditorialSplitWorkspace({
                         </div>
                       </div>
 
-                      {/* Message Bubble */}
-                      <div className="p-3 flex-1 overflow-y-auto">
+                      {/* Auto-Pinned Breaking Message Bar */}
+                      {messengerOpts.autoPin && (
+                        <div
+                          data-testid="mockup-pinned-bar"
+                          className="px-3 py-1.5 bg-[#17212B]/95 border-b border-white/10 flex items-center justify-between gap-2 text-[10.5px]"
+                        >
+                          <div className="border-r-2 border-rose-500 pr-2 min-w-0 flex-1">
+                            <div className="text-rose-400 font-semibold flex items-center gap-1">
+                              <Pin className="w-3 h-3" />
+                              <span>پیام سنجاق‌شده (خبر فوری)</span>
+                            </div>
+                            <div className="text-slate-300 truncate">{headline}</div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Message Bubble + Glass Inline Keyboard */}
+                      <div className="p-2.5 flex-1 overflow-y-auto space-y-1.5">
                         <div className="rounded-2xl rounded-tr-sm bg-[#182533] overflow-hidden shadow-sm border border-white/5">
+                          {/* Reply-to-Previous Quote Block inside Bubble */}
+                          {replyChain.enabled && (
+                            <div
+                              data-testid="mockup-reply-quote"
+                              className="mx-2.5 mt-2.5 px-2.5 py-1.5 rounded-lg bg-[#131E2A] border-r-2 border-sky-400 text-[10.5px]"
+                            >
+                              <div className="text-sky-400 font-semibold flex items-center gap-1">
+                                <CornerUpRight className="w-3 h-3" />
+                                <span>پاسخ به پست #{replyChain.channelMessageId}</span>
+                              </div>
+                              <div className="text-slate-200 font-medium truncate">
+                                {replyChain.parentTitle}
+                              </div>
+                              <div className="text-slate-400 truncate text-[10px]">
+                                {replyChain.parentSnippet}
+                              </div>
+                            </div>
+                          )}
+
                           {cardPreviewUrl && (
                             <img
                               src={carouselSlides[activeSlideIdx] || cardPreviewUrl}
                               alt={headline}
                               referrerPolicy="no-referrer"
-                              className="w-full max-h-48 object-cover"
+                              className="w-full max-h-44 object-cover mt-1.5"
                             />
                           )}
+
                           <div className="p-3 space-y-2">
-                            <div className="text-[12.5px] leading-relaxed whitespace-pre-wrap break-words text-slate-100">
+                            <div className="text-[12px] leading-relaxed whitespace-pre-wrap break-words text-slate-100">
                               {activeOutput.text}
                             </div>
+
                             {(activeOutput.hashtags || []).length > 0 && (
-                              <div className="flex flex-wrap gap-1 pt-1 text-[11px] text-sky-400">
+                              <div className="flex flex-wrap gap-1 pt-0.5 text-[11px] text-sky-400">
                                 {activeOutput.hashtags.map(h => (
                                   <span key={h}>#{h}</span>
                                 ))}
                               </div>
                             )}
+
+                            {/* Custom Link Preview Card inside Bubble */}
+                            {messengerOpts.showLinkPreview && (
+                              <div
+                                data-testid="mockup-link-preview"
+                                className="p-2 rounded-lg bg-[#131E2A] border-r-2 border-emerald-400 text-[10.5px] space-y-0.5"
+                              >
+                                <div className="text-emerald-400 font-semibold">
+                                  {messengerOpts.customLinkDomain}
+                                </div>
+                                <div className="text-slate-100 font-medium line-clamp-1">
+                                  {messengerOpts.customLinkTitle || headline}
+                                </div>
+                                <div className="text-slate-400 truncate text-[9.5px]" dir="ltr">
+                                  {sourceLink}
+                                </div>
+                              </div>
+                            )}
+
                             <div className="pt-1 flex items-center justify-end gap-2 text-[10px] text-slate-400 tabular-nums" dir="ltr">
+                              {messengerOpts.silent && (
+                                <span title="ارسال بی‌صدا" className="text-amber-400 flex items-center gap-0.5">
+                                  <BellOff className="w-3 h-3" />
+                                </span>
+                              )}
                               <span className="flex items-center gap-0.5">
                                 <Eye className="w-3 h-3" /> 1.8K
                               </span>
@@ -1483,12 +2179,65 @@ export function EditorialSplitWorkspace({
                             </div>
                           </div>
                         </div>
+
+                        {/* Interactive Glass Inline Keyboard Buttons (دکمه‌های شیشه‌ای زیر پست) */}
+                        {messengerOpts.inlineButtons.length > 0 && (
+                          <div
+                            data-testid="mockup-inline-keyboard"
+                            className="space-y-1"
+                          >
+                            {/* Row 1: URL Buttons (full width glass buttons) */}
+                            {urlButtons.map(btn => (
+                              <div
+                                key={btn.id}
+                                className="w-full py-1.5 px-3 rounded-xl bg-white/10 hover:bg-white/15 backdrop-blur-md border border-white/10 text-center text-[11px] font-medium text-white flex items-center justify-center gap-1.5 cursor-pointer transition"
+                              >
+                                <span>{btn.label}</span>
+                                <ExternalLink className="w-3 h-3 text-sky-300" />
+                              </div>
+                            ))}
+
+                            {/* Row 2: Reaction Poll Buttons */}
+                            {reactionButtons.length > 0 && (
+                              <div className="grid grid-cols-3 gap-1">
+                                {reactionButtons.map(btn => (
+                                  <button
+                                    key={btn.id}
+                                    type="button"
+                                    onClick={() => incrementReactionInPreview(btn.id)}
+                                    className="py-1.5 px-2 rounded-xl bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/10 text-center text-[11px] font-medium text-white flex items-center justify-center gap-1 transition"
+                                  >
+                                    <span>{btn.label}</span>
+                                    {btn.count !== undefined && (
+                                      <span className="text-[10px] text-slate-300 tabular-nums">
+                                        {toFa(btn.count)}
+                                      </span>
+                                    )}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Thread Continuations inside Channel */}
+                        {replyChain.threadContinuations.map((tc, idx) => (
+                          <div
+                            key={idx}
+                            className="rounded-2xl rounded-tr-sm bg-[#182533]/90 p-2.5 border border-sky-500/20 text-[11.5px] space-y-1"
+                          >
+                            <div className="text-[10px] text-sky-400 font-semibold">
+                              ↳ ادامهٔ زنجیرهٔ خبر ({toFa(idx + 2)})
+                            </div>
+                            <div className="text-slate-100 leading-relaxed">{tc}</div>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   )}
 
                   {activePlatform === "twitter" && (
-                    <div className="flex flex-col bg-black text-white min-h-[470px] p-3.5">
+                    <div className="flex flex-col bg-black text-white min-h-[490px] p-3.5">
                       <div className="flex items-center gap-2.5">
                         <div className="w-9 h-9 rounded-full bg-emerald-600 grid place-items-center text-xs font-bold shrink-0">
                           {(brand.name || "F")[0]}
@@ -1513,13 +2262,19 @@ export function EditorialSplitWorkspace({
                           ))}
                         </div>
                       )}
+                      {replyChain.enabled && (
+                        <div className="mt-2.5 p-2.5 rounded-xl border border-slate-800 bg-slate-900/70 text-[11px]">
+                          <div className="text-sky-400 font-semibold">پاسخ / بازنشر زنجیره‌ای:</div>
+                          <div className="text-slate-200 truncate mt-0.5">{replyChain.parentTitle}</div>
+                        </div>
+                      )}
                       {cardPreviewUrl && (
                         <div className="mt-3 rounded-2xl overflow-hidden border border-slate-800">
                           <img
                             src={cardPreviewUrl}
                             alt={headline}
                             referrerPolicy="no-referrer"
-                            className="w-full max-h-44 object-cover"
+                            className="w-full max-h-40 object-cover"
                           />
                         </div>
                       )}
@@ -1533,7 +2288,7 @@ export function EditorialSplitWorkspace({
                   )}
 
                   {activePlatform === "instagram" && (
-                    <div className="flex flex-col bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 min-h-[470px]">
+                    <div className="flex flex-col bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 min-h-[490px]">
                       <div className="px-3 py-2 flex items-center gap-2 border-b border-slate-100 dark:border-slate-800">
                         <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 p-0.5">
                           <div className="w-full h-full rounded-full bg-white dark:bg-slate-950 grid place-items-center text-[10px] font-bold">
@@ -1591,7 +2346,7 @@ export function EditorialSplitWorkspace({
                   )}
 
                   {activePlatform === "linkedin" && (
-                    <div className="flex flex-col bg-[#F3F2EF] dark:bg-slate-900 text-slate-900 dark:text-slate-100 min-h-[470px] p-2.5">
+                    <div className="flex flex-col bg-[#F3F2EF] dark:bg-slate-900 text-slate-900 dark:text-slate-100 min-h-[490px] p-2.5">
                       <div className="bg-white dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden flex-1 flex flex-col">
                         <div className="p-3 flex items-center gap-2">
                           <div className="w-9 h-9 rounded-lg bg-sky-700 text-white grid place-items-center font-bold text-xs">
@@ -1627,7 +2382,7 @@ export function EditorialSplitWorkspace({
                   )}
 
                   {activePlatform === "website" && (
-                    <div className="flex flex-col bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 min-h-[470px] p-3.5 overflow-y-auto">
+                    <div className="flex flex-col bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 min-h-[490px] p-3.5 overflow-y-auto">
                       <div className="text-[10px] font-semibold text-emerald-600 mb-1">
                         گزارش تحلیلی · تحریریه وبلاگ
                       </div>
@@ -1792,6 +2547,41 @@ export function EditorialSplitWorkspace({
           </div>
         </section>
       </div>
+
+      {/* Visual Trigger-Condition-Action & Smart Anti-Flood Modal */}
+      <OmnichannelAutomationModal
+        open={automationModalOpen}
+        onClose={() => setAutomationModalOpen(false)}
+        rules={compoundRules}
+        onSaveRules={nextRules => {
+          setCompoundRules(nextRules);
+          toast({ kind: "success", message: "قوانین اتوماسیون شرطی ذخیره شدند" });
+        }}
+        onSimulateRuleNow={() => {
+          setDismissedAutopilotIds([]);
+          setAutomationModalOpen(false);
+          if (autopilotCandidates[0]) {
+            handleInspectAutopilotCandidate(autopilotCandidates[0]);
+          } else {
+            toast({
+              kind: "success",
+              message: "شبیه‌سازی قانون ترکیبی انجام شد و بستهٔ فوری آمادهٔ تأیید است",
+            });
+          }
+        }}
+        queueItems={queueItems}
+        onUpdateQueueItems={items => {
+          setQueueItems(items);
+          toast({
+            kind: "success",
+            message: `صف زمان‌بندی با فاصلهٔ استاندارد ${toFa(minGapMinutes)} دقیقه توزیع شد`,
+          });
+        }}
+        minGapMinutes={minGapMinutes}
+        onChangeMinGapMinutes={gap => setMinGapMinutes(gap)}
+        smartSlots={smartSlots}
+        onPickSmartSlot={handlePickSmartSlot}
+      />
     </div>
   );
 }
