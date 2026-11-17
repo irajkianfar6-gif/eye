@@ -96,6 +96,7 @@ type Props = {
   initialDraft?: Draft | null;
   onSavedDraft?: (draft: Draft) => void;
   onOpenConnections?: () => void;
+  onOpenVisualFlow?: () => void;
 };
 
 type RightPaneTab = "feed" | "clusters" | "basket";
@@ -239,6 +240,7 @@ export function EditorialSplitWorkspace({
   initialDraft,
   onSavedDraft,
   onOpenConnections,
+  onOpenVisualFlow,
 }: Props) {
   const toast = useToast();
   const uid = studioUserId();
@@ -1085,6 +1087,17 @@ export function EditorialSplitWorkspace({
 
         {/* Column Proportion Presets + Visual Rule Builder Button */}
         <div className="flex items-center gap-2 text-xs">
+          {onOpenVisualFlow && (
+            <button
+              type="button"
+              data-testid="open-visual-flow-studio-btn"
+              onClick={onOpenVisualFlow}
+              className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold flex items-center gap-1 transition whitespace-nowrap shadow-2xs"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>بوم بصری اتوماسیون (آیکون‌محور)</span>
+            </button>
+          )}
           <button
             type="button"
             data-testid="open-visual-automation-btn"

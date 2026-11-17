@@ -1,4 +1,4 @@
-import { Search, Rss, FileText, Star, Circle, Settings, Plus, TrendingUp, Bookmark, Tag, FileUp, ChevronDown, ChevronLeft, RefreshCw, AlertTriangle, Trash2, Network, Globe2, BarChart3, Sunrise, Command, Sparkles, Filter, Brain, NotebookPen, Clock, Pin, X, Wand2, Radar, Package, MonitorDot, Crosshair } from "lucide-react";
+import { Search, Rss, FileText, Star, Circle, Settings, Plus, TrendingUp, Bookmark, Tag, FileUp, ChevronDown, ChevronLeft, RefreshCw, AlertTriangle, Trash2, Network, Globe2, BarChart3, Sunrise, Command, Sparkles, Filter, Brain, NotebookPen, Clock, Pin, X, Wand2, Radar, Package, MonitorDot, Crosshair, Workflow, Columns3 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Languages, CopyMinus } from "lucide-react";
 import { ThemeToggle } from "./ThemeToggle";
@@ -39,6 +39,7 @@ type Props = {
   onOpenNotes?: () => void;
   onOpenTimeline?: () => void;
   onOpenStudio?: () => void;
+  onOpenVisualFlow?: () => void;
   pinnedTopics?: PinnedTopic[];
   onToggleTopic?: (id: string) => void;
   onClearTopics?: () => void;
@@ -54,7 +55,7 @@ export function Sidebar({
   totals = { all: 0, unread: 0, starred: 0, saved: 0 },
   search = "", setSearch = () => {}, lastRefresh = null,
   feedStatus = {}, onOpenOpml = () => {}, onRemoveFeed, onPruneFeeds, pruning = false, onOpenHelp, onOpenRules,
-  onOpenStats, onOpenDigest, onOpenPalette, onOpenSourceHub, onOpenSavedSearches, onOpenKnowledge, onOpenNotes, onOpenTimeline, onOpenStudio,
+  onOpenStats, onOpenDigest, onOpenPalette, onOpenSourceHub, onOpenSavedSearches, onOpenKnowledge, onOpenNotes, onOpenTimeline, onOpenStudio, onOpenVisualFlow,
   pinnedTopics = [], onToggleTopic, onClearTopics, onAddTopic, socialUnread = 0, watchUnread = 0,
 }: Props & { onOpenHelp?: () => void; onOpenRules?: () => void }) {
   const [feedsOpen, setFeedsOpen] = useState(true);
@@ -103,6 +104,8 @@ export function Sidebar({
       label: 'ابزارها',
       icon: Wand2,
       items: [
+        { id: 'visual-flow', label: 'بوم بصری اتوماسیون', icon: Workflow, count: null, action: onOpenVisualFlow || onOpenStudio },
+        { id: 'studio', label: 'استودیوی محتوا (۳ستونه)', icon: Columns3, count: null, action: onOpenStudio },
         { id: 'newspack', label: 'بسته‌های خبری سفارشی', icon: Package, count: null },
         { id: 'digest', label: 'گزارش روزانه', icon: Sunrise, count: null, action: onOpenDigest },
         { id: 'stats', label: 'داشبورد آمار', icon: BarChart3, count: null, action: onOpenStats },
@@ -111,7 +114,6 @@ export function Sidebar({
         { id: 'knowledge', label: 'موتور دانش', icon: Brain, count: null, action: onOpenKnowledge },
         { id: 'notes', label: 'یادداشت‌ها', icon: NotebookPen, count: null, action: onOpenNotes },
         { id: 'timeline', label: 'خط زمانی موضوع', icon: Clock, count: null, action: onOpenTimeline },
-        { id: 'studio', label: 'استودیوی محتوا', icon: Wand2, count: null, action: onOpenStudio },
       ],
     },
   ];
@@ -229,6 +231,33 @@ export function Sidebar({
       </div>
 
       <div className="flex-1 overflow-y-auto p-2">
+        <div className="mb-3 p-2 rounded-xl bg-gradient-to-br from-indigo-500/10 via-purple-500/10 to-emerald-500/10 border border-indigo-200/70 dark:border-indigo-800/60 space-y-1.5">
+          <div className="text-[11px] font-bold text-indigo-700 dark:text-indigo-300 px-1 flex items-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5" /> استودیوی تحریریه و اتوماسیون
+          </div>
+          <button
+            onClick={() => (onOpenVisualFlow ? onOpenVisualFlow() : onOpenStudio?.())}
+            data-testid="sidebar-open-visual-flow"
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-right shadow-sm transition cursor-pointer"
+          >
+            <Workflow className="w-4 h-4 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-bold leading-tight">بوم بصری اتوماسیون</div>
+              <div className="text-[10px] text-indigo-100 truncate">طراحی چرخه با نمادها و آیکون‌ها</div>
+            </div>
+          </button>
+          <button
+            onClick={() => onOpenStudio?.()}
+            data-testid="sidebar-open-studio-workspace"
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-right shadow-sm transition cursor-pointer"
+          >
+            <Columns3 className="w-4 h-4 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-bold leading-tight">میز کار تحریریه (۳ستونه)</div>
+              <div className="text-[10px] text-emerald-100 truncate">ویرایشگر غنی ۸ پلتفرم + موبایل</div>
+            </div>
+          </button>
+        </div>
         <nav className="mb-4 space-y-3">
           {navGroups.map(group => {
             const GroupIcon = group.icon;

@@ -62,8 +62,8 @@ async function doSeed(force = false): Promise<number> {
 
   if (!force) {
     try {
-      const existing = await api.getFeeds();
-      if (Array.isArray(existing) && existing.length >= payload.length) {
+      const existing = await api.listFeeds();
+      if (Array.isArray(existing) && existing.length > 0) {
         try {
           localStorage.setItem(LS_KEY, DIRECTORY_VERSION);
           localStorage.setItem(LEGACY_INTL_KEY, "1");
@@ -73,8 +73,10 @@ async function doSeed(force = false): Promise<number> {
     } catch { /* proceed with seed */ }
   }
 
-  // 1) Remove every existing source/link so the directory is authoritative.
-  await api.clearFeeds();
+  // 1) Remove every existing source/link only when forcing a full reseed.
+  if (force) {
+    await api.clearFeeds();
+  }
 
   // 2) Bulk-add in chunks to stay within request-size limits.
   const CHUNK = 100;

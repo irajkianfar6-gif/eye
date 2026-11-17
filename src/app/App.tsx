@@ -145,13 +145,17 @@ function buildArticleActions(
 export default function App() {
   const { theme, toggle: toggleTheme } = useTheme();
   const [feeds, setFeeds] = useState<RemoteFeed[]>([]);
-  const [items, setItems] = useState<Article[]>([]);
+  const [items, setItems] = useState<Article[]>(sampleArticles);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeView, setActiveView] = useState("all");
   const [selectedFeed, setSelectedFeed] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(() =>
+    typeof window !== "undefined" && window.innerWidth >= 768 && sampleArticles.length > 0
+      ? sampleArticles[0].id
+      : null
+  );
   const [viewMode, setViewMode] = useState<'cards' | 'list' | 'magazine'>('list');
   const [addOpen, setAddOpen] = useState(false);
   const [opmlOpen, setOpmlOpen] = useState(false);
@@ -179,6 +183,7 @@ export default function App() {
   const [notesOpen, setNotesOpen] = useState(false);
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [studioOpen, setStudioOpen] = useState(false);
+  const [studioInitialView, setStudioInitialView] = useState<"workspace" | "visual_flow" | "hub">("visual_flow");
   const [timelineTopic, setTimelineTopic] = useState<TopicQuery | null>(null);
 
   useEffect(() => { setupPWA(); }, []);
@@ -227,10 +232,17 @@ export default function App() {
         feedCacheRef.current.set(`cat:${opts.category}`, mapped);
         const newIds = new Set(mapped.map(m => m.id));
         setItems(prev => dedupe([...mapped, ...prev.filter(a => !newIds.has(a.id))]));
-      } else if (mapped.length === 0 && feedsList.length === 0) {
+      } else if (mapped.length === 0) {
         setItems(sampleArticles);
+        if (typeof window !== "undefined" && window.innerWidth >= 768 && sampleArticles.length > 0) {
+          setSelectedId(prev => prev ?? sampleArticles[0].id);
+        }
       } else {
-        setItems(dedupe(mapped));
+        const deduped = dedupe(mapped);
+        setItems(deduped);
+        if (typeof window !== "undefined" && window.innerWidth >= 768 && deduped.length > 0) {
+          setSelectedId(prev => (deduped.some(x => x.id === prev) ? prev : deduped[0].id));
+        }
       }
       if (mapped.length) offlineCache.saveBatch(mapped).catch(() => {});
       setLastRefresh(new Date());
@@ -709,18 +721,11 @@ export default function App() {
   );
 
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
-  const [mobileOnboardOpen, setMobileOnboardOpen] = useState(() => isMobile && !hasOnboarded());
+  const [mobileOnboardOpen, setMobileOnboardOpen] = useState(false);
   const [mobileActionFor, setMobileActionFor] = useState<Article | null>(null);
   const [mobileShareFor, setMobileShareFor] = useState<Article | null>(null);
   const [mobileWidgetPreviewOpen, setMobileWidgetPreviewOpen] = useState(false);
   const [mobileWhatsNewOpen, setMobileWhatsNewOpen] = useState(false);
-  useEffect(() => {
-    if (!isMobile) return;
-    if (mobileOnboardOpen) return;
-    if (hasSeenWhatsNew()) return;
-    const t = setTimeout(() => setMobileWhatsNewOpen(true), 2500);
-    return () => clearTimeout(t);
-  }, [isMobile, mobileOnboardOpen]);
   const [mobileInstallOpen, setMobileInstallOpen] = useState(false);
   const [mobileQuickNoteOpen, setMobileQuickNoteOpen] = useState(false);
   const [mobileNotesOpen, setMobileNotesOpen] = useState(false);
@@ -831,15 +836,35 @@ export default function App() {
             switch (tab) {
               case "home":
                 return (
-                  <HomeScreen
-                    articles={mobileItems}
-                    onOpen={(a) => setSelectedId(a.id)}
-                    onToggleSave={(a) => toggleSave(a.id)}
-                    onLongPress={(a) => setMobileActionFor(a)}
-                    onRefresh={() => loadAll(selectedFeed ? { feedId: selectedFeed } : {})}
-                    onSearch={() => setMobileSearchOpen(true)}
-                    onCompose={() => setMobileQuickNoteOpen(true)}
-                  />
+                  <div className="flex flex-col h-full min-h-0">
+                    <div dir="rtl" className="shrink-0 flex items-center gap-1.5 px-3 py-2 bg-gradient-to-l from-indigo-950 via-slate-900 to-emerald-950 text-white border-b border-indigo-500/30 overflow-x-auto">
+                      <button
+                        onClick={() => { setStudioInitialView("visual_flow"); setMobileStudioOpen(true); }}
+                        data-testid="mobile-top-open-visual-flow"
+                        className="shrink-0 px-2.5 py-1 rounded-lg bg-indigo-600 text-white text-[11px] font-bold inline-flex items-center gap-1 shadow-sm"
+                      >
+                        ⚡ بوم بصری اتوماسیون
+                      </button>
+                      <button
+                        onClick={() => { setStudioInitialView("workspace"); setMobileStudioOpen(true); }}
+                        data-testid="mobile-top-open-workspace"
+                        className="shrink-0 px-2.5 py-1 rounded-lg bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center gap-1 shadow-sm"
+                      >
+                        🎛️ میز کار تحریریه
+                      </button>
+                    </div>
+                    <div className="flex-1 min-h-0">
+                      <HomeScreen
+                        articles={mobileItems}
+                        onOpen={(a) => setSelectedId(a.id)}
+                        onToggleSave={(a) => toggleSave(a.id)}
+                        onLongPress={(a) => setMobileActionFor(a)}
+                        onRefresh={() => loadAll(selectedFeed ? { feedId: selectedFeed } : {})}
+                        onSearch={() => setMobileSearchOpen(true)}
+                        onCompose={() => setMobileQuickNoteOpen(true)}
+                      />
+                    </div>
+                  </div>
                 );
               case "discover":
                 return (
@@ -885,7 +910,7 @@ export default function App() {
                   onOpenHistory={() => setMobileHistoryOpen(true)}
                   onOpenStats={() => setMobileStatsOpen(true)}
                   onOpenTopics={() => setMobileTopicsOpen(true)}
-                  onOpenStudio={() => setMobileStudioOpen(true)}
+                  onOpenStudio={() => { setStudioInitialView("hub"); setMobileStudioOpen(true); }}
                   onOpenSocial={() => setMobileSocialOpen(true)}
                   onOpenNewspack={() => setMobileNewspackOpen(true)}
                   socialUnread={socialUnread}
@@ -948,6 +973,7 @@ export default function App() {
                 <div className="fixed inset-0 z-[var(--z-mobile-reader)] bg-[var(--background)]">
                   <StudioScreen
                     articles={mobileItems}
+                    initialView={studioInitialView}
                     onClose={() => setMobileStudioOpen(false)}
                   />
                 </div>
@@ -1126,7 +1152,8 @@ export default function App() {
         onOpenKnowledge={() => setKnowledgeOpen(true)}
         onOpenNotes={() => setNotesOpen(true)}
         onOpenTimeline={() => { setTimelineTopic(null); setTimelineOpen(true); }}
-        onOpenStudio={() => setStudioOpen(true)}
+        onOpenStudio={() => { setStudioInitialView("workspace"); setStudioOpen(true); }}
+        onOpenVisualFlow={() => { setStudioInitialView("visual_flow"); setStudioOpen(true); }}
         onRefresh={() => loadAll(selectedFeed ? { feedId: selectedFeed } : {})}
         loading={loading}
         totals={totals}
@@ -1156,7 +1183,43 @@ export default function App() {
           {error}
         </div>
       )}
-      <div className="flex-1 flex min-w-0 pt-12 md:pt-0 pb-14 md:pb-0">
+      <div className="flex-1 flex flex-col min-w-0 pt-12 md:pt-0 pb-14 md:pb-0">
+        {/* Top Quick-Access Studio & Visual Flow Bar */}
+        <div className="shrink-0 flex items-center justify-between gap-2 px-4 py-2 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shadow-xs">
+          <div className="flex items-center gap-2 overflow-x-auto">
+            <button
+              onClick={() => { setStudioInitialView("visual_flow"); setStudioOpen(true); }}
+              data-testid="top-open-visual-flow"
+              className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-xs transition cursor-pointer shrink-0"
+            >
+              <span>⚡</span> بوم بصری اتوماسیون (Visual Flow)
+            </button>
+            <button
+              onClick={() => { setStudioInitialView("workspace"); setStudioOpen(true); }}
+              data-testid="top-open-studio-workspace"
+              className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-xs transition cursor-pointer shrink-0"
+            >
+              <span>🎛️</span> میز کار ۳ستونه تحریریه (۸ پلتفرم)
+            </button>
+            <button
+              onClick={() => { setActiveView("graph"); setShowStats(false); setShowDigest(false); }}
+              data-testid="top-open-graph"
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition cursor-pointer shrink-0 ${
+                activeView === "graph"
+                  ? "bg-amber-500 text-white"
+                  : "bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200"
+              }`}
+            >
+              <span>🕸️</span> نقشهٔ رسانه‌ای و سفر در زمان
+            </button>
+          </div>
+          <div className="hidden lg:flex items-center gap-2 text-[11px] text-slate-500">
+            <span>۴۷+ منبع RSS فعال</span>
+            <span>·</span>
+            <span className="text-emerald-600 dark:text-emerald-400 font-semibold">هوش مصنوعی متصل (claude-sonnet-5)</span>
+          </div>
+        </div>
+      <div className="flex-1 flex min-w-0 min-h-0">
       {showStats ? (
         <MediaAnalyticsDashboard articles={items} savedIds={savedIds} onClose={() => setShowStats(false)} />
       ) : showDigest ? (
@@ -1247,6 +1310,7 @@ export default function App() {
       </>
       )}
       </div>
+      </div>
 
       <nav className="md:hidden fixed bottom-0 right-0 left-0 z-30 grid grid-cols-5 bg-white/95 dark:bg-slate-950/95 backdrop-blur border-t border-slate-200 dark:border-slate-800 h-14">
         {[
@@ -1308,7 +1372,7 @@ export default function App() {
       <TimelineView open={timelineOpen} onClose={() => setTimelineOpen(false)} articles={items} initialTopic={timelineTopic} onSelectArticle={(id) => { setTimelineOpen(false); handleSelect(id); }} />
       <KnowledgePanel open={knowledgeOpen} onClose={() => setKnowledgeOpen(false)} articles={items} onSelect={(id) => { setKnowledgeOpen(false); handleSelect(id); }} onOpenTimeline={(topic) => { setKnowledgeOpen(false); setTimelineTopic(topic); setTimelineOpen(true); }} />
       <Notes open={notesOpen} onClose={() => setNotesOpen(false)} onOpenArticle={(id) => { setNotesOpen(false); handleSelect(id); }} currentArticle={selected ? { id: selected.id, title: selected.title } : null} />
-      {studioOpen && <DesktopStudio articles={items} onClose={() => setStudioOpen(false)} />}
+      {studioOpen && <DesktopStudio articles={items} initialView={studioInitialView} onClose={() => setStudioOpen(false)} />}
       <OpmlDialog open={opmlOpen} onClose={() => setOpmlOpen(false)} onDone={() => loadAll()} />
       <ShortcutsDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
       <RulesDialog open={rulesOpen} onClose={() => setRulesOpen(false)} onDone={() => loadAll(selectedFeed ? { feedId: selectedFeed } : {})} />

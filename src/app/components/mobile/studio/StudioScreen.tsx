@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Sparkles, FileText, Wand2, Palette, Trash2, ChevronLeft, Clock, Send, Link2, Zap, Activity, BarChart3, CalendarClock } from "lucide-react";
+import { Sparkles, FileText, Wand2, Palette, Trash2, ChevronLeft, Clock, Send, Link2, Zap, Activity, BarChart3, CalendarClock, Workflow, Columns3 } from "lucide-react";
 import { MobileScreen } from "../shell/MobileScreen";
 import { MobileTopBar } from "../shell/MobileTopBar";
 import { useHaptics } from "../hooks";
@@ -18,21 +18,27 @@ import { AnalyticsScreen } from "./AnalyticsScreen";
 import { QueueScreen } from "./QueueScreen";
 import { CronSetupScreen } from "./CronSetupScreen";
 import { RetryQueueScreen } from "./RetryQueueScreen";
+import { VisualFlowStudio } from "./VisualFlowStudio";
+import { EditorialSplitWorkspace } from "./EditorialSplitWorkspace";
 import { toFa } from "../utils/fa";
 
-type View = "hub" | "brand" | "templates" | "compose" | "draft" | "connections" | "automation" | "activity" | "analytics" | "queue" | "cron" | "retries";
+type View = "hub" | "visual_flow" | "workspace" | "brand" | "templates" | "compose" | "draft" | "connections" | "automation" | "activity" | "analytics" | "queue" | "cron" | "retries";
 
 type Props = {
   articles: Article[];
   onClose: () => void;
+  initialView?: "hub" | "visual_flow" | "workspace";
 };
 
-export function StudioScreen({ articles, onClose }: Props) {
+export function StudioScreen({ articles, onClose, initialView = "hub" }: Props) {
   const haptic = useHaptics();
   const toast = useToast();
   const uid = studioUserId();
 
-  const [view, setView] = useState<View>("hub");
+  const [view, setView] = useState<View>(initialView);
+  useEffect(() => {
+    if (initialView) setView(initialView);
+  }, [initialView]);
   const [brand, setBrand] = useState<BrandProfile | null>(null);
   const [tplCount, setTplCount] = useState(0);
   const [drafts, setDrafts] = useState<Draft[]>([]);
@@ -81,6 +87,52 @@ export function StudioScreen({ articles, onClose }: Props) {
     }
   };
 
+  if (view === "visual_flow") {
+    return (
+      <MobileScreen topbar={<MobileTopBar title="بوم بصری اتوماسیون" onBack={() => setView("hub")} />}>
+        <div className="h-full overflow-y-auto">
+          <VisualFlowStudio
+            articles={articles}
+            onApplySimulationToWorkspace={(sim) => {
+              const synthDraft: Draft = {
+                id: `flow-draft-${Date.now()}`,
+                title: sim.generatedHeadline,
+                sourceTitle: sim.matchedArticles[0]?.title || sim.generatedHeadline,
+                sourceLink: sim.matchedArticles[0]?.link || "https://kian.media/news",
+                cardTheme: sim.cardConfig.theme,
+                cardRatio: sim.cardConfig.ratio,
+                outputs: sim.generatedOutputs,
+                status: "draft",
+                auto: true,
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+              };
+              setActiveDraft(synthDraft);
+              setView("workspace");
+            }}
+          />
+        </div>
+      </MobileScreen>
+    );
+  }
+  if (view === "workspace") {
+    return (
+      <MobileScreen topbar={<MobileTopBar title="میز کار تحریریه" onBack={() => setView("hub")} />}>
+        <div className="h-full overflow-y-auto">
+          <EditorialSplitWorkspace
+            articles={articles}
+            initialDraft={activeDraft}
+            onSavedDraft={(d) => {
+              setActiveDraft(d);
+              refresh();
+            }}
+            onOpenConnections={() => setView("connections")}
+            onOpenVisualFlow={() => setView("visual_flow")}
+          />
+        </div>
+      </MobileScreen>
+    );
+  }
   if (view === "brand") return <BrandProfileScreen onClose={() => setView("hub")} />;
   if (view === "templates") return <TemplatesScreen onClose={() => setView("hub")} />;
   if (view === "compose")
@@ -122,11 +174,39 @@ export function StudioScreen({ articles, onClose }: Props) {
             <p className="text-[12.5px] leading-relaxed text-white/85 max-w-[280px]">
               خبرها را به محتوای آمادهٔ انتشار برای شبکه‌های اجتماعی و سایت خبری‌ات تبدیل کن — با لحن و برند اختصاصی خودت.
             </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                onClick={() => { haptic("tap"); setView("visual_flow"); }}
+                className="px-3 py-1.5 rounded-lg bg-white text-[var(--brand-700)] text-[12px] font-bold inline-flex items-center gap-1.5"
+              >
+                <Workflow className="size-3.5" /> بوم بصری اتوماسیون
+              </button>
+              <button
+                onClick={() => { haptic("tap"); setView("workspace"); }}
+                className="px-3 py-1.5 rounded-lg bg-white/20 text-white border border-white/30 text-[12px] font-bold inline-flex items-center gap-1.5"
+              >
+                <Columns3 className="size-3.5" /> میز کار تحریریه
+              </button>
+            </div>
           </div>
         </div>
 
         {/* Setup cards */}
         <div className="px-3 mt-4 grid grid-cols-2 gap-2">
+          <SetupCard
+            icon={<Workflow className="size-5" />}
+            title="بوم بصری اتوماسیون"
+            sub="طراحی چرخه با نمادها"
+            done={true}
+            onClick={() => { haptic("tap"); setView("visual_flow"); }}
+          />
+          <SetupCard
+            icon={<Columns3 className="size-5" />}
+            title="میز کار تحریریه"
+            sub="ویرایشگر ۸ پلتفرم"
+            done={true}
+            onClick={() => { haptic("tap"); setView("workspace"); }}
+          />
           <SetupCard
             icon={<Palette className="size-5" />}
             title="پروفایل برند"
@@ -150,7 +230,7 @@ export function StudioScreen({ articles, onClose }: Props) {
           />
           <SetupCard
             icon={<Zap className="size-5" />}
-            title="اتوماسیون"
+            title="اتوماسیون زمان‌بندی"
             sub={retryPending > 0 ? `${toFa(retryPending)} انتشار در صف تلاش` : ruleCount > 0 ? `${toFa(ruleCount)} قانون فعال` : "زمان‌بندی/رخداد"}
             done={ruleCount > 0}
             badge={retryPending}

@@ -19,23 +19,27 @@ import { QueueScreen } from "./QueueScreen";
 import { CronSetupScreen } from "./CronSetupScreen";
 import { RetryQueueScreen } from "./RetryQueueScreen";
 import { EditorialSplitWorkspace } from "./EditorialSplitWorkspace";
-import { Columns3 } from "lucide-react";
+import { VisualFlowStudio } from "./VisualFlowStudio";
+import { Columns3, Workflow } from "lucide-react";
 import { toFa } from "../utils/fa";
 
-type View = "workspace" | "hub" | "brand" | "templates" | "compose" | "draft" | "connections" | "automation" | "activity" | "analytics" | "queue" | "cron" | "retries";
+type View = "workspace" | "visual_flow" | "hub" | "brand" | "templates" | "compose" | "draft" | "connections" | "automation" | "activity" | "analytics" | "queue" | "cron" | "retries";
 
-type Props = { articles: Article[]; onClose: () => void };
+export type StudioInitialView = "workspace" | "visual_flow" | "hub" | "automation";
+
+type Props = { articles: Article[]; onClose: () => void; initialView?: StudioInitialView };
 
 type NavItem = { id: View; label: string; icon: React.ComponentType<{ className?: string }>; desc: string };
 
 const NAV: NavItem[] = [
   { id: "workspace", label: "میز کار تحریریه", icon: Columns3, desc: "۳ ستون: فید، ویرایشگر و موبایل" },
+  { id: "visual_flow", label: "بوم بصری اتوماسیون", icon: Workflow, desc: "طراحی چرخه با نمادها و آیکون‌ها" },
   { id: "hub", label: "داشبورد", icon: LayoutGrid, desc: "نمای کلی و پیش‌نویس‌ها" },
   { id: "compose", label: "ساخت محتوا", icon: Send, desc: "تولید از خبرها با هوش مصنوعی" },
   { id: "brand", label: "پروفایل برند", icon: Palette, desc: "نام، لحن، لوگو" },
   { id: "templates", label: "قالب‌ها", icon: FileText, desc: "الگوهای متن و کارت خبری" },
   { id: "connections", label: "اتصال حساب‌ها", icon: Link2, desc: "تلگرام، بله، روبیکا، ..." },
-  { id: "automation", label: "اتوماسیون", icon: Zap, desc: "قوانین زمان‌بندی و رخداد" },
+  { id: "automation", label: "اتوماسیون زمان‌بندی", icon: Zap, desc: "قوانین زمان‌بندی و رخداد" },
   { id: "queue", label: "صف زمان‌بندی", icon: CalendarClock, desc: "موعد بعدی و پیش‌نویس‌ها" },
   { id: "activity", label: "فعالیت", icon: Activity, desc: "گزارش انتشار و خودکارها" },
   { id: "analytics", label: "آمار", icon: BarChart3, desc: "داشبورد تحلیلی انتشار" },
@@ -55,9 +59,12 @@ export function DesktopStudio(props: Props) {
   );
 }
 
-function DesktopStudioInner({ articles, onClose }: Props) {
+function DesktopStudioInner({ articles, onClose, initialView = "workspace" }: Props) {
   const uid = studioUserId();
-  const [view, setView] = useState<View>("workspace");
+  const [view, setView] = useState<View>(initialView);
+  useEffect(() => {
+    if (initialView) setView(initialView);
+  }, [initialView]);
   const [activeDraft, setActiveDraft] = useState<Draft | null>(null);
 
   const [brand, setBrand] = useState<BrandProfile | null>(null);
@@ -120,6 +127,30 @@ function DesktopStudioInner({ articles, onClose }: Props) {
           refresh();
         }}
         onOpenConnections={() => setView("connections")}
+        onOpenVisualFlow={() => setView("visual_flow")}
+      />
+    );
+  } else if (view === "visual_flow") {
+    panel = (
+      <VisualFlowStudio
+        articles={articles}
+        onApplySimulationToWorkspace={(sim) => {
+          const synthDraft: Draft = {
+            id: `flow-draft-${Date.now()}`,
+            title: sim.generatedHeadline,
+            sourceTitle: sim.matchedArticles[0]?.title || sim.generatedHeadline,
+            sourceLink: sim.matchedArticles[0]?.link || "https://kian.media/news",
+            cardTheme: sim.cardConfig.theme,
+            cardRatio: sim.cardConfig.ratio,
+            outputs: sim.generatedOutputs,
+            status: "draft",
+            auto: true,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          };
+          setActiveDraft(synthDraft);
+          setView("workspace");
+        }}
       />
     );
   } else if (view === "hub") {
@@ -137,7 +168,30 @@ function DesktopStudioInner({ articles, onClose }: Props) {
   else if (view === "templates") panel = <Column><TemplatesScreen onClose={goHub} /></Column>;
   else if (view === "connections") panel = <Column wide><ConnectionsScreen onClose={goHub} /></Column>;
   else if (view === "compose") panel = <Column full><ComposeScreen articles={articles} onClose={goHub} onCreated={openDraft} /></Column>;
-  else if (view === "automation") panel = <Column wide><AutomationScreen onClose={goHub} onOpenCron={() => setView("cron")} onOpenRetries={() => setView("retries")} /></Column>;
+  else if (view === "automation") {
+    panel = (
+      <Column wide>
+        <div className="mb-4 rounded-2xl border border-indigo-200 dark:border-indigo-900/50 bg-gradient-to-l from-indigo-600/10 via-purple-600/10 to-emerald-500/10 p-4 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="size-10 rounded-xl bg-indigo-600 text-white grid place-items-center shrink-0 shadow-sm">
+              <Workflow className="size-5" />
+            </span>
+            <div className="min-w-0">
+              <div className="text-sm font-bold text-slate-900 dark:text-white">بوم بصری و تعاملی اتوماسیون (No-Code Visual Flow)</div>
+              <div className="text-xs text-slate-500 dark:text-slate-400">طراحی چرخهٔ استخراج، پالایش، بازنویسی هوشمند و انتشار چندکاناله با چیدن نمادها کنار هم</div>
+            </div>
+          </div>
+          <button
+            onClick={() => setView("visual_flow")}
+            className="shrink-0 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-sm cursor-pointer"
+          >
+            <Workflow className="size-4" /> باز کردن بوم بصری
+          </button>
+        </div>
+        <AutomationScreen onClose={goHub} onOpenCron={() => setView("cron")} onOpenRetries={() => setView("retries")} />
+      </Column>
+    );
+  }
   else if (view === "cron") panel = <Column wide><CronSetupScreen onClose={() => setView("automation")} /></Column>;
   else if (view === "retries") panel = <Column wide><RetryQueueScreen onClose={() => setView("automation")} /></Column>;
   else if (view === "queue") panel = <Column wide><QueueScreen onClose={goHub} onOpenDraft={openDraft} /></Column>;
